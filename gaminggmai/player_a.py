@@ -116,28 +116,87 @@ if __name__ == '__main__':
                     except:
                         return None
 
-        send_msg({'type': 'START', 'symbol': 'X'})
-        print('You are X (start first). Index 0–8.')
+        # 將雙方名稱一併傳給對手，方便用 username 表示 winner
+        names = {'X': username, 'O': bname}
+        send_msg({'type': 'START', 'symbol': 'X', 'names': names})
+        print(f'You are X (start first). Index 0–8. Opponent: {bname}')
+
+        # track last local move index so we can revert if opponent reports INVALID
+        last_my_move = None
 
         while True:
             print(t.printable())
             if t.turn == 'X' and t.winner is None:
-                idx = int(input('Your move (0–8): '))
-                if not t.make_move(idx, 'X'):
-                    print('Invalid move, retry.')
-                    continue
-                send_msg({'type': 'MOVE', 'idx': idx})
+                # 驗證輸入格式、範圍，以及該位置是否空
+                while True:
+                    move_input = input('Your move (0–8): ').strip()
+                    try:
+                        idx = int(move_input)
+                    except ValueError:
+                        print('Invalid input, enter integer 0–8.')
+                        continue
+                    if idx < 0 or idx > 8:
+                        print('Index out of range, enter 0–8.')
+                        continue
+                    # 嘗試在本地下子；如果失敗（已被佔用或非法），提醒重試
+                    if not t.make_move(idx, 'X'):
+                        print('Invalid move (occupied or illegal), retry.')
+                        continue
+                    # 成功下子後紀錄並送出
+                    last_my_move = idx
+                    send_msg({'type': 'MOVE', 'idx': idx})
+                    # 下棋後秀出當前板子並等待對手
+                    print(t.printable())
+                    print(f"waiting for opponent ({bname})")
+                    break
+
             elif t.turn == 'O' and t.winner is None:
                 msg = recv_msg()
                 if not msg:
                     print('Connection closed.')
                     break
-                if msg.get('type') == 'MOVE':
-                    t.make_move(msg['idx'], 'O')
+                mtype = msg.get('type')
+                if mtype == 'MOVE':
+                    idx = msg.get('idx')
+                    # 基本驗證
+                    if not isinstance(idx, int) or idx < 0 or idx > 8:
+                        send_msg({'type': 'INVALID', 'reason': 'bad index'})
+                        print('Received bad MOVE index from opponent.')
+                        continue
+                    # 嘗試下子，若非法回傳 INVALID 並等待對方重送
+                    if not t.make_move(idx, 'O'):
+                        send_msg({'type': 'INVALID', 'reason': 'illegal move'})
+                        print(f"Received illegal MOVE from opponent (idx={idx}), requested retry.")
+                        continue
+                elif mtype == 'INVALID':
+                    # 對方告知我方先前的 MOVE 為非法：嘗試還原我方最後一次下子（如果仍存在）
+                    print('Opponent reported our previous move invalid. Reverting local move and please retry.')
+                    if last_my_move is not None:
+                        try:
+                            # 若 TicTacToe 實作以 board 屬性儲存格子，嘗試還原
+                            if hasattr(t, 'board') and t.board[last_my_move] == 'X':
+                                t.board[last_my_move] = None
+                                t.turn = 'X'
+                                last_my_move = None
+                        except Exception:
+                            # 如果無法還原就提示使用者並退出保險處理
+                            print('Unable to auto-revert move; please restart game if state inconsistent.')
+                    continue
+                elif mtype == 'END':
+                    # 顯示最終棋盤再結束
+                    print('Final board:')
+                    print(t.printable())
+                    print('Opponent ended the game:', msg.get('winner'))
+                    break
+                # 其他 message type 可繼續擴充處理
 
             if t.winner:
-                print('Game over! Winner:', t.winner)
-                send_msg({'type': 'END', 'winner': t.winner})
+                # 顯示最終棋盤與贏家，然後通知對手
+                print('Final board:')
+                print(t.printable())
+                winner_name = names.get(t.winner, t.winner)
+                print('Game over! Winner:', winner_name)
+                send_msg({'type': 'END', 'winner': winner_name})
                 break
 
         conn.close()

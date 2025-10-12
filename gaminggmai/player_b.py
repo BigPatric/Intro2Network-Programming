@@ -46,6 +46,8 @@ def start_game_client(ip, port):
     send_msg = lambda o: conn.sendall((json.dumps(o)+'\n').encode())
 
     symbol = 'O'
+    names = {}
+    opponent_name = ''
     while True:
         msg = recv_msg()
         if not msg:
@@ -54,6 +56,8 @@ def start_game_client(ip, port):
         typ = msg.get('type')
         if typ == 'START':
             symbol = msg.get('symbol')
+            names = msg.get('names', {})
+            opponent_name = names.get('X', 'Opponent')
             print('Game start. You are O.')
         elif typ == 'MOVE':
             t.make_move(msg['idx'], 'X')
@@ -63,11 +67,27 @@ def start_game_client(ip, port):
 
         if t.turn == 'O' and not t.winner:
             print(t.printable())
-            idx = int(input('Your move (0–8): '))
-            if not t.make_move(idx, 'O'):
-                print('Invalid move, try again.')
-                continue
-            send_msg({'type': 'MOVE', 'idx': idx})
+            # 驗證輸入格式、範圍，以及該位置是否空
+            while True:
+                move_input = input('Your move (0–8): ').strip()
+                try:
+                    idx = int(move_input)
+                except ValueError:
+                    print('Invalid input, enter integer 0–8.')
+                    continue
+                if idx < 0 or idx > 8:
+                    print('Index out of range, enter 0–8.')
+                    continue
+                # 嘗試在本地下子；如果失敗（已被佔用或非法），提醒重試
+                if not t.make_move(idx, 'O'):
+                    print('Invalid move (occupied or illegal), retry.')
+                    continue
+                # 成功下子後送出
+                send_msg({'type': 'MOVE', 'idx': idx})
+                # 下棋後秀出當前板子並等待對手
+                print(t.printable())
+                print(f"waiting for opponent ({opponent_name})")
+                break
 
     conn.close()
 
