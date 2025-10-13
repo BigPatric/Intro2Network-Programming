@@ -67,9 +67,6 @@ def lobby_logout(sock, username):
     send_json_tcp(sock, {'action': 'logout', 'username': username})
     sock.close()
 
-def update_stats_periodically(sock, username, stats, stop_event):
-    pass  # 已移除 xp/level/currency，不再需要定期更新
-
 def start_game_server(username, port_range=(10001, 20000)):
     t = TicTacToe()
     s = None
@@ -255,7 +252,7 @@ def main_loop(sock, username, stats):
             if s is None: continue
 
             udp = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-            msg = json.dumps({'type': 'TCP_INFO', 'ip': '127.0.0.1', 'port': tcp_port})
+            msg = json.dumps({'type': 'TCP_INFO', 'ip': '140.113.235.152', 'port': tcp_port})
             udp.sendto(msg.encode(), (ip, port))
             udp.close()
 
@@ -279,16 +276,7 @@ if __name__ == '__main__':
         username, stats = lobby_login(lobby_sock)
         print("Logged in. Current stats:", stats)
 
-        stop_event = threading.Event()
-        stats_thread = threading.Thread(target=update_stats_periodically, args=(lobby_sock, username, stats, stop_event))
-        stats_thread.daemon = True
-        stats_thread.start()
-
         main_loop(lobby_sock, username, stats)
-
-        stop_event.set()
-        stats_thread.join(timeout=2)
-        print("Final stats before logout:", stats)
         send_json_tcp(lobby_sock, {'action': 'update_stats', 'username': username, 'stats': stats})
 
     except ConnectionRefusedError:

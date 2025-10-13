@@ -2,20 +2,20 @@
   "userb": {
     "password": "bbbbb",
     "created": 1760253475.331382,
-    "last_login": 1760340973.6345851,
+    "last_login": 1760342154.315617,
     "stats": {
-      "login_count": 5,
-      "games_played": 4,
+      "login_count": 7,
+      "games_played": 5,
       "games_won": 1
     }
   },
   "usera": {
     "password": "aaaaa",
     "created": 1760253819.467519,
-    "last_login": 1760340925.0852962,
+    "last_login": 1760342103.323745,
     "stats": {
-      "login_count": 5,
-      "games_played": 4,
+      "login_count": 6,
+      "games_played": 5,
       "games_won": 2
     }
   },
