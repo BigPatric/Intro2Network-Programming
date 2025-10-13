@@ -14,7 +14,7 @@ class TicTacToe:
         self.moves = 0
 
     def make_move(self, idx: int, sym: str) -> bool:
-        if self.board[idx] != ' ' or self.winner is not None:
+        if self.board[idx] is not None and self.board[idx] != ' ' or self.winner is not None:
             return False
         if sym != self.turn:
             return False

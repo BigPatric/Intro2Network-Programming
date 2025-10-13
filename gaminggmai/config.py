@@ -1,8 +1,14 @@
 # config.py
-LOBBY_HOST = '127.0.0.1'    # demo 時用 localhost；換成 CSIT server IP 進行實測
+
+SERVER_HOST = '127.0.0.1'
+# SERVER_HOST = '0.0.0.0'
+
+LOBBY_HOST = '127.0.0.1'
+# LOBBY_HOST = '140.113.235.152'
 LOBBY_PORT = 12000
 
 CSIT_SERVERS = ['127.0.0.1']
+# CSIT_SERVERS = ['140.113.235.152']
 
 UDP_PORT_START = 18000
 UDP_PORT_END = 18020
