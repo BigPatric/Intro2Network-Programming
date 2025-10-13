@@ -252,7 +252,7 @@ def main_loop(sock, username, stats):
             if s is None: continue
 
             udp = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-            msg = json.dumps({'type': 'TCP_INFO', 'ip': '140.113.235.152', 'port': tcp_port})
+            msg = json.dumps({'type': 'TCP_INFO', 'ip': '140.113.17.12', 'port': tcp_port})
             udp.sendto(msg.encode(), (ip, port))
             udp.close()
 
