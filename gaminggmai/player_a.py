@@ -117,6 +117,23 @@ def play_game(lobby_sock, conn, addr, username, bname, t, stats):
     while not game_over:
         print(t.printable())
         if t.turn == 'X' and t.winner is None:
+            # Check for opponent disconnection before input
+            try:
+                conn.settimeout(0.1)
+                chunk = conn.recv(1)
+                if not chunk:
+                    print('Opponent disconnected. Game over.')
+                    game_over = True
+                    continue
+            except socket.timeout:
+                pass
+            except:
+                print('Opponent disconnected. Game over.')
+                game_over = True
+                continue
+            finally:
+                conn.settimeout(None)
+            
             while True:
                 move_input = input('Your move (0–8 or 67 to surrender): ').strip()
                 if move_input == '67':

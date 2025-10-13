@@ -94,6 +94,23 @@ def start_game_client(ip, port, username, stats):
             game_over = True
 
         if t.turn == symbol and not t.winner:
+            # Check for opponent disconnection before input
+            try:
+                conn.settimeout(0.1)
+                chunk = conn.recv(1)
+                if not chunk:
+                    print('Opponent disconnected. Game over.')
+                    game_over = True
+                    continue
+            except socket.timeout:
+                pass
+            except:
+                print('Opponent disconnected. Game over.')
+                game_over = True
+                continue
+            finally:
+                conn.settimeout(None)
+            
             print(t.printable())
             while True:
                 move_input = input('Your move (0–8 or 67 to surrender): ').strip()
