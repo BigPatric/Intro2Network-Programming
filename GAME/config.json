@@ -1,0 +1,14 @@
+{
+  "lobby": {
+    "ip": "127.0.0.1",
+    "port": 12000
+  },
+  "playerA": {
+    "scan_ip": "127.0.0.1",
+    "port_start": 18000,
+    "port_end": 18030
+  },
+  "playerB": {
+    "udp_port": 0
+  }
+}
