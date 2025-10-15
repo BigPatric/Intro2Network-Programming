@@ -10,24 +10,30 @@ using namespace std;
 string username;
 
 bool lobbyLogin(const string& ip,const string& port){
+    // Connect to lobby server (TCP)
     addrinfo hints{},*res;hints.ai_family=AF_UNSPEC;hints.ai_socktype=SOCK_STREAM;
     getaddrinfo(ip.c_str(),port.c_str(),&hints,&res);
-    int fd=socket(res->ai_family,res->ai_socktype,res->ai_protocol);
-    connect(fd,res->ai_addr,res->ai_addrlen);freeaddrinfo(res);
+    int fd=socket(res->ai_family,res->ai_socktype,res->ai_protocol); // TCP socket
+    connect(fd,res->ai_addr,res->ai_addrlen); // TCP connect
+    freeaddrinfo(res);
     string c;
     while(true){
-    cout<<"[Lobby] r(register)/l(login)? ";cin>>c;
-    if(c=="r"||c=="l")break;
-    cout<<"Invalid choice, please input 'r' or 'l'\n";
+        cout<<"[Lobby] r(register)/l(login)? ";cin>>c;
+        if(c=="r"||c=="l")break;
+        cout<<"Invalid choice, please input 'r' or 'l'\n";
     }
+    // Input username and password
     cout<<"username: ";cin>>username;cout<<"password: ";string pw;cin>>pw;
-    if(c=="r"){tcpSendLine(fd,"action=register;username="+username+";password="+pw);string r;tcpRecvLine(fd,r);cout<<r<<"\n";}
-    tcpSendLine(fd,"action=login;username="+username+";password="+pw);string r;tcpRecvLine(fd,r);cout<<r<<"\n";
+    if(c=="r"){tcpSendLine(fd,"action=register;username="+username+";password="+pw);string r;tcpRecvLine(fd,r);cout<<r<<"\n";} // TCP send/receive
+    // Try login
+    tcpSendLine(fd,"action=login;username="+username+";password="+pw);string r;tcpRecvLine(fd,r);cout<<r<<"\n"; // TCP send/receive
     close(fd);return r.find("ok")!=string::npos;
 }
 
 void game(int fd){
-    vector<char>b(9,' ');auto show=[&](){cout<<"\n";for(int i=0;i<9;i++){cout<<(b[i]==' '?'.':b[i])<<((i%3==2)?"\n":" ");}};
+    // Game board and logic
+    vector<char>b(9,' ');
+    auto show=[&](){cout<<"\n";for(int i=0;i<9;i++){cout<<(b[i]==' '?'.':b[i])<<((i%3==2)?"\n":" ");}};
     bool myturn=true;
     auto checkWinner=[&](const vector<char>& board)->char{
         const int lines[8][3] = {{0,1,2},{3,4,5},{6,7,8},{0,3,6},{1,4,7},{2,5,8},{0,4,8},{2,4,6}};
@@ -42,20 +48,20 @@ void game(int fd){
         show();
         if(myturn){
             int pos; cout<<"Enter your move (0~8) or use 67 to surrender >:) "; cin>>pos;
-            if(pos==67){ cout<<"You surrendered...\n"; tcpSendLine(fd, "action=game_over;result=lose"); break; }
+            if(pos==67){ cout<<"You surrendered...\n"; tcpSendLine(fd, "action=game_over;result=lose"); break; } // TCP send
             else if(pos<0||pos>8||b[pos]!=' '){cout<<"Invalid move!!\n";continue;}
             b[pos]='X';
-            tcpSendLine(fd,"action=move;pos="+to_string(pos));
-            // check if this move ends the game
+            tcpSendLine(fd,"action=move;pos="+to_string(pos)); // TCP send
+            // Check if this move ends the game
             char res = checkWinner(b);
             if(res=='X'){
-                cout<<"You win!\n"; tcpSendLine(fd, "action=game_over;result=win"); break;
+                cout<<"You win!\n"; tcpSendLine(fd, "action=game_over;result=win"); break; // TCP send
             } else if(res=='D'){
-                cout<<"Draw!\n"; tcpSendLine(fd, "action=game_over;result=draw"); break;
+                cout<<"Draw!\n"; tcpSendLine(fd, "action=game_over;result=draw"); break; // TCP send
             }
             myturn=false;
         }else{
-            string msg;if(!tcpRecvLine(fd,msg))break;auto m=parseMessage(msg);
+            string msg;if(!tcpRecvLine(fd,msg))break;auto m=parseMessage(msg); // TCP receive
             if(m["action"]=="move"){
                 int p=stoi(m["pos"]);b[p]='O';
                 // check if opponent's move ends the game
@@ -93,7 +99,7 @@ int main(int argc,char**argv){
         cout<<"[Lobby] type 'scan' to search players, 'logout' to exit: ";
         string cmd; cin>>cmd;
         if(cmd=="logout"){
-            // perform logout to clear server-side login state
+            // Logout to clear server-side login state
             cout << "Good Bye " << username << " (❍ᴥ❍ʋ) !\n";
             addrinfo hints{},*res;hints.ai_family=AF_UNSPEC;hints.ai_socktype=SOCK_STREAM;
             getaddrinfo(lip.c_str(),lport.c_str(),&hints,&res);
@@ -111,15 +117,15 @@ int main(int argc,char**argv){
             cout<<"Unknown command\n"; continue;
         }
 
-        // Prepare UDP socket used for all probes/replies
+    // Prepare UDP socket for all probes/replies
         int sock=socket(AF_INET,SOCK_DGRAM,0);
         timeval tv{1,0};setsockopt(sock,SOL_SOCKET,SO_RCVTIMEO,&tv,sizeof(tv));
 
-        // support multiple scan IPs from config (or single sip)
+    // Support multiple scan IPs from config (or single sip)
         std::vector<std::string> scan_ips = {"140.113.17.12", "140.113.17.13", "140.113.17.14"};
         cout<<"Scanning "<<scan_ips.size()<<" target(s) ports "<<ps<<".."<<pe<<"\n";
 
-        // send probes to every target IP and port in the configured ranges
+    // Send probes to every target IP and port in the configured ranges
         for(const auto &target_ip : scan_ips){
             for(int p=ps;p<=pe;p++){
                 sockaddr_in d{};d.sin_family=AF_INET;d.sin_port=htons(p);inet_pton(AF_INET,target_ip.c_str(),&d.sin_addr);
@@ -127,7 +133,7 @@ int main(int argc,char**argv){
             }
         }
 
-        // collect replies for a short window (1500ms)
+    // Collect replies for a short window (1500ms)
         vector<pair<string,int>>found;char buf[256];sockaddr_in s; socklen_t sl=sizeof(s);
         auto start=chrono::steady_clock::now();
         while(chrono::duration_cast<chrono::milliseconds>(chrono::steady_clock::now()-start).count()<1500){
@@ -143,7 +149,7 @@ int main(int argc,char**argv){
         sockaddr_in dest{};dest.sin_family=AF_INET;inet_pton(AF_INET,found[idx].first.c_str(),&dest.sin_addr);dest.sin_port=htons(found[idx].second);
         string inv="action=invite;from="+username;sendto(sock,inv.c_str(),inv.size(),0,(sockaddr*)&dest,sizeof(dest));
 
-        // give the peer more time to accept/decline (10 seconds)
+    // Give the peer more time to accept/decline (10 seconds)
         timeval tv_inv{10,0}; setsockopt(sock,SOL_SOCKET,SO_RCVTIMEO,&tv_inv,sizeof(tv_inv));
         cout<<"Invite sent, waiting up to 10 seconds for response...\n";
         char rbuf[256];socklen_t rl=sizeof(dest);int n=recvfrom(sock,rbuf,sizeof(rbuf)-1,0,(sockaddr*)&dest,&rl);
@@ -159,9 +165,12 @@ int main(int argc,char**argv){
                 listen(sfd,1);
                 string msg="action=tcp_info;port="+to_string(port);
                 sendto(sock,msg.c_str(),msg.size(),0,(sockaddr*)&dest,sizeof(dest));
-                cout<<"Waiting TCP on port "<<port<<"...\n";
+                cout<<"Waiting for TCP connection on port "<<port<<"...\n";
                 int cfd=accept(sfd,nullptr,nullptr);
-                cout<<"Connected. Start game\n";game(cfd);close(cfd);close(sfd);
+                cout<<"Connected. Start game\n";
+                game(cfd);
+                close(cfd);
+                close(sfd);
                 cout<<"Game finished. Back to lobby.\n";
             }else{
                 cout<<"Rejected or no response. Return to lobby.\n";

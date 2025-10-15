@@ -15,7 +15,7 @@ const char* ACCOUNTS_FILE = "accounts.json";
 map<string, string> accounts;
 map<string, int> logged;
 
-// 辅助函数：转义字符串中的特殊字符
+// Helper: escape special characters in a string
 string escapeString(const string &s) {
     string r; 
     for(char c: s) { 
@@ -25,15 +25,16 @@ string escapeString(const string &s) {
     return r;
 }
 
+// Load accounts from file
 void loadAccounts() {
-    // 不需要加鎖
+    // No locking needed
     accounts.clear();
     logged.clear();
     ifstream ifs(ACCOUNTS_FILE);
     if(!ifs) return;
     string txt((istreambuf_iterator<char>(ifs)), istreambuf_iterator<char>());
     try {
-        // 只匹配 username/password
+    // Only match username/password
         std::regex re("\\{\\s*\"username\"\\s*:\\s*\"([^\"]+)\"\\s*,\\s*\"password\"\\s*:\\s*\"([^\"]+)\"\\s*\\}");
         auto begin = std::sregex_iterator(txt.begin(), txt.end(), re);
         auto end = std::sregex_iterator();
@@ -42,15 +43,16 @@ void loadAccounts() {
             string u = m[1].str();
             string p = m[2].str();
             accounts[u] = p;
-            logged[u] = 0; // 初始未登录
+            logged[u] = 0; // Not logged in initially
         }
     } catch(...) {
-        // 忽略解析錯誤
+    // Ignore parse errors
     }
 }
 
+// Save accounts to file
 void saveAccounts() {
-    // 不需要加鎖
+    // No locking needed
     string tmp = string(ACCOUNTS_FILE) + ".tmp";
     ofstream ofs(tmp, ios::trunc);
     ofs << "{\n  \"users\": [\n";
@@ -70,8 +72,9 @@ void saveAccounts() {
     std::rename(tmp.c_str(), ACCOUNTS_FILE);
 }
 
+// Handle one command and return response
 string handleCommand(const string &line) {
-    // 不需要加鎖
+    // No locking needed
     auto m = parseMessage(line);
     string action = m["action"];
     string username = m["username"];
@@ -117,6 +120,7 @@ string handleCommand(const string &line) {
     return "status=fail;msg=unknown_action";
 }
 
+// Handle one client connection
 void handleClient(int fd) {
     string line;
     string current_user;
@@ -128,7 +132,7 @@ void handleClient(int fd) {
         
         string response = handleCommand(line);
         
-        // 更新当前连接的用户状态
+    // Update current user's status for this connection
         if(action == "login" && response.find("status=ok") != string::npos ) {
             current_user = username;
             logged[username] += 1;
@@ -154,34 +158,34 @@ int main(int argc, char** argv) {
     }
     
     
-    // 加载账户数据
+    // Load account data
     loadAccounts();
     
-    // 创建服务器套接字
+    // Create server socket (TCP)
     addrinfo hints{}, *res;
     hints.ai_family = AF_UNSPEC;
-    hints.ai_socktype = SOCK_STREAM;
+    hints.ai_socktype = SOCK_STREAM; // TCP
     hints.ai_flags = AI_PASSIVE;
     
     getaddrinfo(nullptr, portstr.c_str(), &hints, &res);
-    int sfd = socket(res->ai_family, res->ai_socktype, res->ai_protocol);
+    int sfd = socket(res->ai_family, res->ai_socktype, res->ai_protocol); // TCP socket
     
     int yes = 1; 
     setsockopt(sfd, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof(yes));
     
-    ::bind(sfd, res->ai_addr, res->ai_addrlen);
-    listen(sfd, 10);
+    ::bind(sfd, res->ai_addr, res->ai_addrlen); // bind TCP socket
+    listen(sfd, 10); // listen TCP socket
     freeaddrinfo(res);
     
     cout << "Lobby server running on port " << portstr << "\n";
     
-    // 主循环接受连接
+    // Main loop: accept connections (TCP)
     while(true) {
         sockaddr_storage client_addr;
         socklen_t client_len = sizeof(client_addr);
-        int client_fd = accept(sfd, (sockaddr*)&client_addr, &client_len);
-        handleClient(client_fd); // 直接呼叫，不用 thread
+        int client_fd = accept(sfd, (sockaddr*)&client_addr, &client_len); // TCP accept
+        handleClient(client_fd); // Call directly, no thread
     }
-    
+
     return 0;
 }

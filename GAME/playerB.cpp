@@ -10,24 +10,26 @@ using namespace std;
 string username;
 
 bool lobbyLogin(const string& ip,const string& port){
+    // start TCP 
     addrinfo hints{},*res;
-    hints.ai_family=AF_UNSPEC; hints.ai_socktype=SOCK_STREAM;
+    hints.ai_family=AF_UNSPEC; hints.ai_socktype=SOCK_STREAM; // TCP
     if(getaddrinfo(ip.c_str(),port.c_str(),&hints,&res)!=0){ perror("getaddrinfo"); return false; }
-    int fd = socket(res->ai_family,res->ai_socktype,res->ai_protocol);
+    int fd = socket(res->ai_family,res->ai_socktype,res->ai_protocol); // TCP socket
     if(fd < 0){ perror("socket"); freeaddrinfo(res); return false; }
-    if(connect(fd,res->ai_addr,res->ai_addrlen)!=0){ perror("connect"); close(fd); freeaddrinfo(res); return false; }
+    if(connect(fd,res->ai_addr,res->ai_addrlen)!=0){ perror("connect"); close(fd); freeaddrinfo(res); return false; } // TCP connect
     freeaddrinfo(res);
     string c;
     while(true){
-       cout<<"[Lobby] r(register)/l(login)? "; cin>>c;
+        cout<<"[Lobby] r(register)/l(login)? "; cin>>c; // Prompt for registration or login
         if(c=="r"||c=="l")break;
         else{cout<<"Invalid choice, please input 'r' or 'l'\n"; continue;}  
     }
     
-    cout<<"username: ";cin>>username; cout<<"password: ";string pw;cin>>pw;
-    if(c=="r"){ tcpSendLine(fd,"action=register;username="+username+";password="+pw); string resp; tcpRecvLine(fd,resp); cout<<resp<<"\n"; }
-    tcpSendLine(fd,"action=login;username="+username+";password="+pw);
-    string resp; tcpRecvLine(fd,resp); cout<<resp<<"\n";
+    cout<<"username: ";cin>>username; cout<<"password: ";string pw;cin>>pw; // Input username and password
+    if(c=="r"){ tcpSendLine(fd,"action=register;username="+username+";password="+pw); string resp; tcpRecvLine(fd,resp); cout<<resp<<"\n"; } // TCP send/receive
+    // Try login
+    tcpSendLine(fd,"action=login;username="+username+";password="+pw); // TCP send
+    string resp; tcpRecvLine(fd,resp); cout<<resp<<"\n"; // TCP receive
     close(fd);
     return resp.find("ok")!=string::npos;
 }
@@ -44,21 +46,21 @@ void game(int fd){
         for(char c:board) if(c==' ') return ' ';
         return 'D';
     };
-    cout << "You go next, you are O\n";
+        cout << "You go next, you are O\n"; 
     while(true){
         show();
         if(myturn){
             int pos; cout<<"Enter your move (0~8) or use 67 to surrender >:) "; cin>>pos;
-            if(pos==67){ cout<<"You surrendered...\n"; tcpSendLine(fd, "action=game_over;result=lose"); break; }
+            if(pos==67){ cout<<"You surrendered...\n"; tcpSendLine(fd, "action=game_over;result=lose"); break; } // TCP 傳送
             else if(pos<0||pos>8||b[pos]!=' '){cout<<"Invalid move!!\n";continue;}
             b[pos]='O';
-            tcpSendLine(fd,"action=move;pos="+to_string(pos));
+            tcpSendLine(fd,"action=move;pos="+to_string(pos)); // TCP 傳送
             // check if this move ends the game
             char res = checkWinner(b);
             if(res=='O'){
-                cout<<"You win!\n"; tcpSendLine(fd, "action=game_over;result=win"); break;
+                cout<<"You win!\n"; tcpSendLine(fd, "action=game_over;result=win"); break; // TCP 傳送
             } else if(res=='D'){
-                cout<<"Draw!\n"; tcpSendLine(fd, "action=game_over;result=draw"); break;
+                cout<<"Draw!\n"; tcpSendLine(fd, "action=game_over;result=draw"); break; // TCP 傳送
             }
             myturn=false;
         }else{
@@ -164,7 +166,7 @@ int main(int argc,char**argv){
                 if(ans=="y"){
                     string ok="action=accept"; sendto(sock,ok.c_str(),ok.size(),0,(sockaddr*)&sender,slen);
 
-                    // 等待對方回傳 tcp_info，設定 10 秒 timeout，避免永久阻塞
+                    // 等待對方回傳 tcp_info，設定 10 秒 timeout
                     timeval tv_inv{10,0}; setsockopt(sock,SOL_SOCKET,SO_RCVTIMEO,&tv_inv,sizeof(tv_inv));
                     char buf2[256]; sockaddr_in s2; socklen_t l2=sizeof(s2);
                     int n2=recvfrom(sock,buf2,sizeof(buf2)-1,0,(sockaddr*)&s2,&l2);
