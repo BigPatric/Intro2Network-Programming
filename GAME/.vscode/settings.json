@@ -57,6 +57,7 @@
         "valarray": "cpp",
         "variant": "cpp",
         "vector": "cpp",
-        "algorithm": "cpp"
+        "algorithm": "cpp",
+        "regex": "cpp"
     }
 }

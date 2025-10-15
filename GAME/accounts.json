@@ -1,9 +1,9 @@
 {
   "users": [
-    {"username":"usera", "password":"aaaaa", "logged": 0 },
-    {"username":"useraa", "password":"aaaaaa", "logged": 0 },
-    {"username":"userb", "password":"bbbbb", "logged": 0 },
-    {"username":"userc", "password":"ccccc", "logged": 0 },
-    {"username":"userd", "password":"ddddd", "logged": 0 }
+    {"username":"usera", "password":"aaaaa"},
+    {"username":"useraa", "password":"aaaaaa"},
+    {"username":"userb", "password":"bbbbb"},
+    {"username":"userc", "password":"ccccc"},
+    {"username":"userd", "password":"ddddd"}
   ]
 }
