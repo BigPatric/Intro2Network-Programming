@@ -48,8 +48,9 @@ void game(int fd){
     while(true){
         show();
         if(myturn){
-            int pos; cout<<"Your move (0~8): "; cin>>pos;
-            if(pos<0||pos>8||b[pos]!=' '){cout<<"Invalid move, try again!!! \n";continue;}
+            int pos; cout<<"Enter your move (0~8) or use 67 to surrender >:) "; cin>>pos;
+            if(pos==67){ cout<<"You surrendered...\n"; tcpSendLine(fd, "action=game_over;result=lose"); break; }
+            else if(pos<0||pos>8||b[pos]!=' '){cout<<"Invalid move!!\n";continue;}
             b[pos]='O';
             tcpSendLine(fd,"action=move;pos="+to_string(pos));
             // check if this move ends the game
