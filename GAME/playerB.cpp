@@ -12,11 +12,18 @@ string username;
 bool lobbyLogin(const string& ip,const string& port){
     addrinfo hints{},*res;
     hints.ai_family=AF_UNSPEC; hints.ai_socktype=SOCK_STREAM;
-    getaddrinfo(ip.c_str(),port.c_str(),&hints,&res);
-    int fd=socket(res->ai_family,res->ai_socktype,res->ai_protocol);
-    if(connect(fd,res->ai_addr,res->ai_addrlen)!=0){ perror("connect"); return false;}
+    if(getaddrinfo(ip.c_str(),port.c_str(),&hints,&res)!=0){ perror("getaddrinfo"); return false; }
+    int fd = socket(res->ai_family,res->ai_socktype,res->ai_protocol);
+    if(fd < 0){ perror("socket"); freeaddrinfo(res); return false; }
+    if(connect(fd,res->ai_addr,res->ai_addrlen)!=0){ perror("connect"); close(fd); freeaddrinfo(res); return false; }
     freeaddrinfo(res);
-    cout<<"[Lobby] r(register)/l(login)? "; string c;cin>>c;
+    string c;
+    while(true){
+       cout<<"[Lobby] r(register)/l(login)? "; cin>>c;
+        if(c=="r"||c=="l")break;
+        else{cout<<"Invalid choice, please input 'r' or 'l'\n"; continue;}  
+    }
+    
     cout<<"username: ";cin>>username; cout<<"password: ";string pw;cin>>pw;
     if(c=="r"){ tcpSendLine(fd,"action=register;username="+username+";password="+pw); string resp; tcpRecvLine(fd,resp); cout<<resp<<"\n"; }
     tcpSendLine(fd,"action=login;username="+username+";password="+pw);
@@ -37,12 +44,12 @@ void game(int fd){
         for(char c:board) if(c==' ') return ' ';
         return 'D';
     };
+    cout << "You go next, you are O\n";
     while(true){
         show();
-        cout << "You go next, you are O\n";
         if(myturn){
             int pos; cout<<"Your move (0~8): "; cin>>pos;
-            if(pos<0||pos>8||b[pos]!=' '){cout<<"Invalid\n";continue;}
+            if(pos<0||pos>8||b[pos]!=' '){cout<<"Invalid move, try again!!! \n";continue;}
             b[pos]='O';
             tcpSendLine(fd,"action=move;pos="+to_string(pos));
             // check if this move ends the game
@@ -89,12 +96,41 @@ int main(int argc,char**argv){
 
         // select UDP port to bind
         while(true){
-            cout<<"Enter UDP port to bind (18000 ~ 18030): ";
-            if(!(cin>>udp_port)){
-                cout<<"Invalid input. Please enter a numeric port.\n";
-                cin.clear();
-                string junk; getline(cin,junk);
+            string cmd;
+            cout<<"Enter UDP port to bind (18000 ~ 18030) or logout to exit: ";
+            cin >> cmd;
+            if(cmd=="logout"){
+                // perform logout to clear server-side login state
+                cout << "Good Bye " << username << " (❍ᴥ❍ʋ) !\n";
+                addrinfo hints{},*res;hints.ai_family=AF_UNSPEC;hints.ai_socktype=SOCK_STREAM;
+                getaddrinfo(lip.c_str(),lport.c_str(),&hints,&res);
+                int fd=socket(res->ai_family,res->ai_socktype,res->ai_protocol);
+                connect(fd,res->ai_addr,res->ai_addrlen);freeaddrinfo(res);
+                string out = "action=logout;username="+username;
+                tcpSendLine(fd,out);
+                string r; tcpRecvLine(fd,r); cout<<r<<"\n";
+                close(fd);
+                // return to login prompt
+                if(!lobbyLogin(lip,lport)) return 0;
                 continue;
+            }
+            else{
+                try
+                {
+                    udp_port = stoi(cmd);
+                    if(udp_port < 18000 || udp_port > 18030){
+                        cout<<"Port out of range. Please enter a value between 18000 and 18030.\n";
+                        continue;
+                    }
+                }
+                catch(const std::exception& e)
+                {
+                    cout<<"Invalid input. Please enter a numeric port.\n";
+                    cin.clear();
+                    string junk; getline(cin,junk);
+                    continue; 
+                }
+                
             }
             if(udp_port < 18000 || udp_port > 18030){
                 cout<<"Port out of range. Please enter a value between 18000 and 18030.\n";
@@ -102,7 +138,6 @@ int main(int argc,char**argv){
             }
             break;
         }
-        
 
         int sock=socket(AF_INET,SOCK_DGRAM,0);
         if(sock<0){ perror("socket"); return 1; }
@@ -110,7 +145,7 @@ int main(int argc,char**argv){
         if(::bind(sock,(sockaddr*)&addr,sizeof(addr))!=0){ perror("bind"); close(sock); udp_port = 0; continue; }
         if(udp_port==0){ sockaddr_in a2; socklen_t l2=sizeof(a2); getsockname(sock,(sockaddr*)&a2,&l2); udp_port = ntohs(a2.sin_port); }
         cout<< username << " listening on UDP port: "<<udp_port<<"\n";
-        
+
         bool restart_select_port = false;
 
         while(true){

@@ -37,9 +37,9 @@ void game(int fd){
         for(char c:board) if(c==' ') return ' ';
         return 'D';
     };
+    cout << "You go first, you are X\n";
     while(true){
         show();
-        cout << "You go first, you are X\n";
         if(myturn){
             int pos; cout<<"Your move (0~8): "; cin>>pos;
             if(pos<0||pos>8||b[pos]!=' '){cout<<"Invalid\n";continue;}

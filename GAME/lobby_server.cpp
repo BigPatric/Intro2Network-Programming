@@ -5,48 +5,114 @@
 #include <unistd.h>
 #include <arpa/inet.h>
 #include <mutex>
+#include <regex>
+#include <sstream>
+#include <iterator>
+#include <cstdio>
 #include "NetworkUtils.hpp"
 using namespace std;
 
-const char* ACCOUNTS_FILE = "accounts.txt";
+const char* ACCOUNTS_FILE = "accounts.json";
 mutex acc_mtx;
+mutex logged_mtx;
 map<string,string> accounts;
 set<string> logged;
 
 void loadAccounts() {
+    lock_guard<mutex> lk_acc(acc_mtx);
+    accounts.clear();
+    {
+        lock_guard<mutex> lk_logged(logged_mtx);
+        logged.clear();
+    }
     ifstream ifs(ACCOUNTS_FILE);
-    string u,p;
-    while(ifs >> u >> p) accounts[u]=p;
-}
-void saveAccounts() {
-    ofstream ofs(ACCOUNTS_FILE);
-    for(auto &kv:accounts) ofs<<kv.first<<" "<<kv.second<<"\n";
+    if(!ifs) return; // no file yet
+    string txt((istreambuf_iterator<char>(ifs)), istreambuf_iterator<char>());
+    try{
+        // match objects: {"username":"u","password":"p","logged":0}
+        std::regex re(R"(\{\s*\"username\"\s*:\s*\"([^\"]+)\"\s*,\s*\"password\"\s*:\s*\"([^\"]+)\"\s*,\s*\"logged\"\s*:\s*(0|1)\s*\})");
+        auto begin = std::sregex_iterator(txt.begin(), txt.end(), re);
+        auto end = std::sregex_iterator();
+        for(auto it = begin; it != end; ++it){
+            std::smatch m = *it;
+            string u = m[1].str();
+            string p = m[2].str();
+            int lg = stoi(m[3].str());
+            accounts[u] = p;
+            if(lg){
+                lock_guard<mutex> lk(logged_mtx);
+                logged.insert(u);
+            }
+        }
+    } catch(...) {
+        // ignore parse errors
+    }
 }
 
-// handleCommand now receives a reference to currentUser for this connection
-string handleCommand(const string &line, string &currentUser) {
+void saveAccounts() {
+    // lock both mutexes safely (std::lock + adopt_lock)
+    std::lock(acc_mtx, logged_mtx);
+    std::lock_guard<std::mutex> lk1(acc_mtx, std::adopt_lock);
+    std::lock_guard<std::mutex> lk2(logged_mtx, std::adopt_lock);
+
+    string tmp = string(ACCOUNTS_FILE) + ".tmp";
+    ofstream ofs(tmp, ios::trunc);
+    ofs << "{\n  \"users\": [\n";
+    bool first = true;
+    for(const auto &kv : accounts){
+        if(!first) ofs << ",\n";
+        first = false;
+        const string &u = kv.first;
+        const string &p = kv.second;
+        int lg = logged.count(u) ? 1 : 0;
+        auto esc = [](const string &s){
+            string r; for(char c: s){ if(c=='\\' || c=='\"') r.push_back('\\'); r.push_back(c);} return r; };
+        ofs << "    {\"username\":\"" << esc(u) << "\", \"password\":\"" << esc(p) << "\", \"logged\": " << lg << " }";
+    }
+    ofs << "\n  ]\n}\n";
+    ofs.close();
+    // replace atomically
+    std::remove(ACCOUNTS_FILE);
+    std::rename(tmp.c_str(), ACCOUNTS_FILE);
+}
+
+// handleCommand processes register/login/logout by username; login state is NOT bound to TCP connection
+string handleCommand(const string &line) {
     auto m = parseMessage(line);
     string action = m["action"];
     if(action=="register"){
         string u=m["username"], p=m["password"];
-        lock_guard<mutex> lk(acc_mtx);
-        if(accounts.count(u)) return "status=fail;msg=user_exists";
-        accounts[u]=p; saveAccounts();
+        {
+            lock_guard<mutex> lk(acc_mtx);
+            if(accounts.count(u)) return "status=fail;msg=user_exists";
+            accounts[u]=p;
+        }
+        saveAccounts();
         return "status=ok;msg=register_success";
     } else if(action=="login"){
         string u=m["username"], p=m["password"];
-        lock_guard<mutex> lk(acc_mtx);
-        if(!accounts.count(u)) return "status=fail;msg=not_found";
-        if(accounts[u]!=p) return "status=fail;msg=wrong_password";
-        if(logged.count(u)) return "status=fail;msg=already_logged";
-        logged.insert(u);
-        currentUser = u; // associate this connection with the logged-in user
+        // check credentials under acc_mtx
+        {
+            lock_guard<mutex> lk(acc_mtx);
+            if(!accounts.count(u)) return "status=fail;msg=not_found";
+            if(accounts[u]!=p) return "status=fail;msg=wrong_password";
+        }
+        // protect logged set
+        {
+            lock_guard<mutex> lk(logged_mtx);
+            if(logged.count(u)) return "status=fail;msg=already_logged";
+            logged.insert(u);
+        }
+        saveAccounts();
         return "status=ok;msg=login_success";
     } else if(action=="logout"){
-        string u=m["username"];
-        lock_guard<mutex> lk(acc_mtx);
-        logged.erase(u);
-        if(currentUser == u) currentUser.clear();
+        string u = m["username"];
+        if(u.empty()) return "status=fail;msg=no_username";
+        {
+            lock_guard<mutex> lk(logged_mtx);
+            logged.erase(u);
+        }
+        saveAccounts();
         return "status=ok;msg=logout_success";
     }
     return "status=fail;msg=unknown_action";
@@ -54,18 +120,30 @@ string handleCommand(const string &line, string &currentUser) {
 
 void handleClient(int fd){
     string line;
-    string currentUser; // track which user (if any) is associated with this connection
+    string cur_user; // 紀錄此 TCP 連線登入的使用者（若有）
     while(tcpRecvLine(fd, line)){
-        string resp = handleCommand(line, currentUser);
+        auto m = parseMessage(line);
+        string action = m["action"];
+        string resp = handleCommand(line);
+        // 若 login 成功，記錄 username；若 logout 成功則清除
+        if(action=="login"){
+            if(resp.find("status=ok") != string::npos){
+                cur_user = m["username"];
+            }
+        } else if(action=="logout"){
+            if(resp.find("status=ok") != string::npos){
+                cur_user.clear();
+            }
+        }
         tcpSendLine(fd, resp);
     }
-    // connection closed or error -> ensure we cleanup logged state for this user
-    if(!currentUser.empty()){
-        lock_guard<mutex> lk(acc_mtx);
-        if(logged.count(currentUser)){
-            logged.erase(currentUser);
-            cout<<"Cleanup: user "<<currentUser<<" logged out due to disconnect"<<"\n";
+    // TCP 斷線或讀取失敗時，若這條連線之前登入過就把使用者從 logged 移除
+    if(!cur_user.empty()){
+        {
+            lock_guard<mutex> lk(logged_mtx);
+            logged.erase(cur_user);
         }
+        saveAccounts();
     }
     close(fd);
 }
