@@ -204,6 +204,7 @@ int main(int argc,char**argv){
                     }
                 } else {
                     string rej="action=reject"; sendto(sock,rej.c_str(),rej.size(),0,(sockaddr*)&sender,slen);
+                    cout << "You have declined the invitation from " << m["from"] << ". Waiting for new invitations...\n";
                 }
             }
         } // end inner recv loop
