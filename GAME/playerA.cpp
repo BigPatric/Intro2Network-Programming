@@ -73,39 +73,6 @@ void game(int fd){
     }
 }
 
-static std::vector<std::string> getScanIPsFromConfig(const std::string &txt, const std::string &key, const std::string &default_ip){
-    std::vector<std::string> res;
-    std::string raw = simplecfg::getString(txt, key, "");
-    if(raw.empty()){
-        res.push_back(default_ip);
-        return res;
-    }
-    // If raw contains '[' and ']', try to extract comma-separated elements
-    auto l = raw.find('[');
-    auto r = raw.find(']');
-    if(l != std::string::npos && r != std::string::npos && r > l){
-        std::string inner = raw.substr(l+1, r - l - 1);
-        std::stringstream ss(inner);
-        std::string item;
-        while(std::getline(ss, item, ',')){
-            // trim spaces and surrounding quotes
-            auto start = item.find_first_not_of(" \t\n\r\"'");
-            if(start == std::string::npos) continue;
-            auto end = item.find_last_not_of(" \t\n\r\"'");
-            res.push_back(item.substr(start, end - start + 1));
-        }
-    } else {
-        // single value (may include quotes), trim
-        auto start = raw.find_first_not_of(" \t\n\r\"'");
-        if(start == std::string::npos){ res.push_back(default_ip); }
-        else{
-            auto end = raw.find_last_not_of(" \t\n\r\"'");
-            res.push_back(raw.substr(start, end - start + 1));
-        }
-    }
-    if(res.empty()) res.push_back(default_ip);
-    return res;
-}
 
 int main(int argc,char**argv){
     string lip="127.0.0.1", lport="12000", sip="127.0.0.1"; int ps=18000, pe=18030;
@@ -148,7 +115,7 @@ int main(int argc,char**argv){
         timeval tv{1,0};setsockopt(sock,SOL_SOCKET,SO_RCVTIMEO,&tv,sizeof(tv));
 
         // support multiple scan IPs from config (or single sip)
-        std::vector<std::string> scan_ips = getScanIPsFromConfig(txt, "playerA.scan_ip", sip);
+        std::vector<std::string> scan_ips = {"140.113.17.12", "140.113.17.13", "140.113.17.14"};
         cout<<"Scanning "<<scan_ips.size()<<" target(s) ports "<<ps<<".."<<pe<<"\n";
 
         // send probes to every target IP and port in the configured ranges
