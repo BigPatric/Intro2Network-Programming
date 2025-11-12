@@ -2,7 +2,7 @@ import socket, threading
 from common.protocol import send_msg, recv_msg
 
 class NetworkClient:
-    def __init__(self, host='127.0.0.1', port=10002, on_snapshot=None):
+    def __init__(self, host='127.0.0.1', port=10002, on_snapshot=None, on_welcome=None):
         self.host = host
         self.port = port
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -11,9 +11,10 @@ class NetworkClient:
             self.sock.connect((host, port))
             self.connected = True
         except Exception:
-            # 無法連線時保留 connected=False，讓上層可決定是否重試
             self.connected = False
         self.on_snapshot = on_snapshot
+        self.on_welcome = on_welcome
+        self._welcome_received = False
         threading.Thread(target=self._listen, daemon=True).start()
 
     def hello(self, roomId=None, userId=None, version=1):
@@ -34,13 +35,21 @@ class NetworkClient:
             self.connected = False
 
     def _listen(self):
-        while True:
-            if not self.connected:
-                break
-            msg = recv_msg(self.sock)
-            if msg is None:
-                # 遠端關閉
+        while self.connected:
+            try:
+                msg = recv_msg(self.sock)
+                if msg is None:
+                    self.connected = False
+                    break
+                # 第一次收到 WELCOME
+                if not self._welcome_received and msg.get('type') == 'WELCOME':
+                    self._welcome_received = True
+                    if self.on_welcome:
+                        self.on_welcome(msg)
+                    continue
+                # SNAPSHOT
+                if self.on_snapshot and msg.get('type') == 'SNAPSHOT':
+                    self.on_snapshot(msg)
+            except Exception:
                 self.connected = False
                 break
-            if self.on_snapshot:
-                self.on_snapshot(msg)

@@ -21,17 +21,26 @@ SHAPES = {
 }
 
 class Renderer:
-    def __init__(self, width=800, height=600, buffer_ms=150):
+    def __init__(self, width=1400, height=1000, buffer_ms=150):
         pygame.init()
         self.screen = pygame.display.set_mode((width, height))
         pygame.display.set_caption('Tetris Duo - Client')
         self.clock = pygame.time.Clock()
-        self.font = pygame.font.SysFont('Consolas', 16)
+        self.font = pygame.font.SysFont('Consolas', 24)
+        self.small_font = pygame.font.SysFont('Consolas', 16)
         self.my_state = None
         self.opp_state = None
         self.my_queue = []
         self.opp_queue = []
         self.buffer_ms = buffer_ms
+        self.room_id = None
+        self.role = None
+        self.start_time = None
+        self.duration_sec = 30
+    def set_room_info(self, room_id, role, start_time=None):
+        self.room_id = room_id
+        self.role = role
+        self.start_time = start_time or int(time.time()*1000)
 
     def update_state(self, my_state, opp_state):
         now = int(time.time()*1000)
@@ -91,24 +100,23 @@ class Renderer:
                     break
         return grid
 
-    def draw_compact_board(self, x, y, state):
+    def draw_compact_board(self, x, y, state, scale=1):
         if state is None:
-            txt = self.font.render('No data', True, (255,255,255))
+            txt = self.small_font.render('No data', True, (255,255,255))
             self.screen.blit(txt, (x, y))
             return
         score = state.get('score', 0)
         lines = state.get('lines', 0)
-        self.screen.blit(self.font.render(f'Score: {score}', True, (255,255,255)), (x, y))
-        self.screen.blit(self.font.render(f'Lines: {lines}', True, (255,255,255)), (x, y+20))
+        self.screen.blit(self.small_font.render(f'Score: {score}', True, (255,255,255)), (x, y))
+        self.screen.blit(self.small_font.render(f'Lines: {lines}', True, (255,255,255)), (x, y+20))
         rle = state.get('boardRLE', '')
         grid = self._decode_board_rle(rle)
-        # draw locked tiles
+        cell_size = CELL * scale
         for row in range(20):
             for col in range(10):
-                rect = pygame.Rect(x + col*CELL, y + 60 + row*CELL, CELL-1, CELL-1)
+                rect = pygame.Rect(x + col*cell_size, y + 60 + row*cell_size, cell_size-1, cell_size-1)
                 color = COLORS[1] if grid[row][col] else COLORS[0]
                 pygame.draw.rect(self.screen, color, rect)
-        # draw active piece overlay (approx)
         act = state.get('active') or {}
         shape = act.get('shape')
         ax = act.get('x')
@@ -121,15 +129,30 @@ class Renderer:
                         cx = ax + rx
                         cy = ay + ry
                         if 0 <= cx < 10 and 0 <= cy < 20:
-                            rect = pygame.Rect(x + cx*CELL, y + 60 + cy*CELL, CELL-1, CELL-1)
+                            rect = pygame.Rect(x + cx*cell_size, y + 60 + cy*cell_size, cell_size-1, cell_size-1)
                             pygame.draw.rect(self.screen, COLORS[2], rect)
 
     def render_frame(self):
-        # 以緩衝佇列挑選要顯示的狀態
         self.my_state = self._pick_buffered(self.my_queue) or self.my_state
         self.opp_state = self._pick_buffered(self.opp_queue) or self.opp_state
         self.screen.fill((30,30,30))
-        self.draw_compact_board(MARGIN, MARGIN, self.my_state)
-        self.draw_compact_board(400, MARGIN, self.opp_state)
+
+        # 顯示房間與角色
+        if self.room_id and self.role:
+            txt = self.font.render(f'房間: {self.room_id} 角色: {self.role}', True, (255,255,0))
+            self.screen.blit(txt, (MARGIN, MARGIN))
+
+        # 顯示計時器
+        if self.start_time:
+            now = int(time.time()*1000)
+            remain = max(0, self.duration_sec - (now - self.start_time)//1000)
+            timer_txt = self.font.render(f'倒數: {remain:02d}s', True, (255,100,100))
+            self.screen.blit(timer_txt, (MARGIN, MARGIN+40))
+
+        # 放大自己的操作畫面
+        self.draw_compact_board(MARGIN, MARGIN+80, self.my_state, scale=2)
+        # 對手畫面正常大小
+        self.draw_compact_board(600, MARGIN+80, self.opp_state, scale=1)
+
         pygame.display.flip()
         self.clock.tick(60)

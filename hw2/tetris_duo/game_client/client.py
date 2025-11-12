@@ -1,10 +1,11 @@
 import sys
 import os
 import socket
+import time
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 # 也將專案根目錄加入路徑，便於匯入 common 與 lobby 的工具
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-import threading, time
+import threading
 from game_client.network import NetworkClient
 from game_client.renderer import Renderer
 from game_client.input_handler import InputHandler
@@ -216,10 +217,30 @@ class GameClientApp:
         time.sleep(1) # wait for game server to start
         self.renderer = Renderer()
         self.input_handler = InputHandler(None)  # 先建立，稍後補上 network
-        self.net = NetworkClient(game_host, game_port, on_snapshot=self.on_snapshot)
-        self.input_handler.network = self.net  # 補上 network
+        self._welcome_data = None
+        def on_welcome(msg):
+            self._welcome_data = msg
+        # 用 NetworkClient 並指定 on_welcome callback
+        self.net = NetworkClient(game_host, game_port, on_snapshot=self.on_snapshot, on_welcome=on_welcome)
+        if not self.net.connected:
+            print("[Client] 無法連線到 Game Server。")
+            return
+        # 送 HELLO
         self.net.hello(userId=self.name)
-        # 備註：NetworkClient 內部已啟動接收執行緒，會呼叫 on_snapshot
+        # 等待 WELCOME callback
+        wait_start = time.time()
+        while self._welcome_data is None and self.net.connected and time.time() - wait_start < 5:
+            time.sleep(0.05)
+        welcome = self._welcome_data
+        if not welcome:
+            print("[Client] 沒收到 WELCOME 或連線中斷。")
+            return
+        role = welcome.get('role', 'P1')
+        seed = welcome.get('seed')
+        start_time = int(time.time()*1000)
+        room_id = game_port  # 以 port 當作房間 id
+        self.renderer.set_room_info(room_id, role, start_time)
+        self.input_handler.network = self.net  # 補上 network
         # 主迴圈：分離事件輪詢與渲染，降低 pygame 事件衝突
         while True:
             self.input_handler.pump()  # 處理鍵盤事件並送出

@@ -69,9 +69,8 @@ def broadcast_tempo(plan):
         p.send(payload)
 
 
-def game_tick_loop(start_time, duration_sec=30):
+def game_tick_loop(start_time):
     tick = 0
-    end_time = start_time + duration_sec * 1000
     winner = None
     while True:
         now = int(time.time() * 1000)
@@ -83,12 +82,7 @@ def game_tick_loop(start_time, duration_sec=30):
                 if p.alive and not p.board.game_over:
                     winner = name
             break
-        # 30秒到就結束
-        if now >= end_time:
-            # 分數最高者勝
-            scores = {name: p.board.score for name, p in players.items()}
-            winner = max(scores, key=scores.get)
-            break
+        
         for p in active_players:
             p.board.tick()
             if p.board.game_over:
@@ -159,7 +153,7 @@ def main():
     broadcast_tempo(GRAVITY_PLAN)
     # 遊戲開始前送出一次初始快照
     broadcast_snapshot(tick=0)
-    game_tick_loop(start_time, duration_sec=30)
+    game_tick_loop(start_time)
 
 if __name__ == '__main__':
     main()
