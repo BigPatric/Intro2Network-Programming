@@ -1,0 +1,26 @@
+import pygame
+
+KEY_MAP = {
+    pygame.K_LEFT: 'LEFT',
+    pygame.K_RIGHT: 'RIGHT',
+    pygame.K_DOWN: 'SOFT',
+    pygame.K_SPACE: 'HARD',
+    pygame.K_z: 'ROT',
+    pygame.K_c: 'HOLD',
+}
+
+class InputHandler:
+    def __init__(self, network):
+        self.network = network
+        self.quit_requested = False
+
+    def pump(self):
+        for e in pygame.event.get():
+            if e.type == pygame.QUIT:
+                # 不在此直接結束程式，交由上層回到 Lobby
+                self.quit_requested = True
+            if e.type == pygame.KEYDOWN:
+                action = KEY_MAP.get(e.key)
+                if action:
+                    self.network.send_input(action)
+            # allow other events be handled by renderer
