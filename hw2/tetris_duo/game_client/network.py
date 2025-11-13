@@ -1,8 +1,12 @@
 import socket, threading
+try:
+    from config import GAME_CONNECT_HOST
+except Exception:
+    GAME_CONNECT_HOST = '127.0.0.1'
 from common.protocol import send_msg, recv_msg
 
 class NetworkClient:
-    def __init__(self, host='127.0.0.1', port=10002, on_snapshot=None, on_welcome=None):
+    def __init__(self, host=GAME_CONNECT_HOST, port=10002, on_snapshot=None, on_welcome=None, on_game_over=None):
         self.host = host
         self.port = port
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -14,6 +18,7 @@ class NetworkClient:
             self.connected = False
         self.on_snapshot = on_snapshot
         self.on_welcome = on_welcome
+        self.on_game_over = on_game_over
         self._welcome_received = False
         threading.Thread(target=self._listen, daemon=True).start()
 
@@ -48,8 +53,11 @@ class NetworkClient:
                         self.on_welcome(msg)
                     continue
                 # SNAPSHOT
-                if self.on_snapshot and msg.get('type') == 'SNAPSHOT':
+                if msg.get('type') == 'SNAPSHOT' and self.on_snapshot:
                     self.on_snapshot(msg)
+                # GAME_OVER
+                if msg.get('type') == 'GAME_OVER' and self.on_game_over:
+                    self.on_game_over(msg)
             except Exception:
                 self.connected = False
                 break

@@ -6,12 +6,18 @@ import hashlib, os, binascii
 from common.protocol import send_msg, recv_msg
 from lobby_server.db_client import DBClient
 from lobby_server.room_manager import RoomManager
+try:
+    from config import LOBBY_HOST, LOBBY_PORT, GAME_PORT_MIN, GAME_PORT_MAX
+except Exception:
+    # fallback defaults if config import fails
+    LOBBY_HOST, LOBBY_PORT = '127.0.0.1', 10000
+    GAME_PORT_MIN, GAME_PORT_MAX = 10002, 20000
 
-PORT_MIN = 10002
-PORT_MAX = 20000
+PORT_MIN = GAME_PORT_MIN
+PORT_MAX = GAME_PORT_MAX
 
 class LobbyServer:
-    def __init__(self, host='127.0.0.1', port=10000):
+    def __init__(self, host=LOBBY_HOST, port=LOBBY_PORT):
         self.host = host
         self.port = port
         self.server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -21,13 +27,14 @@ class LobbyServer:
         print(f"[Lobby] Running on {port}")
         self.db = DBClient()
         self.rooms = RoomManager()
+        # self.clients: username -> connection
         self.clients = {}
         self.active_game_procs = {}
         self.game_servers = {}  # 用來追蹤遊戲伺服器進程
         self.project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
     # --- Password utilities (PBKDF2-HMAC-SHA256) ---
-    def _hash_password(self, password: str, salt: bytes | None = None):
+    def _hash_password(self, password: str, salt: bytes = None):
         if salt is None:
             salt = os.urandom(16)
         # 100k iterations; returns hex strings for storage
@@ -96,6 +103,11 @@ class LobbyServer:
                 elif action == 'login':
                     name = (data.get('name') or '').strip()
                     password = data.get('password') or ''
+                    # Duplicate login prevention: if user already logged in and different conn
+                    if name in self.clients and self.clients[name] is not conn:
+                        # 檢查舊連線是否仍然有效，簡單測試 send 0-length ping (or just拒絕)
+                        send_msg(conn, {'error': 'already logged in elsewhere'})
+                        continue
                     r = self.db.query('User', {'name': name})
                     rows = r.get('result', [])
                     if rows:
@@ -160,6 +172,12 @@ class LobbyServer:
         except Exception as e:
             print('[Lobby] error', e)
         finally:
+            # 清理登入狀態
+            try:
+                if user and user.get('name') in self.clients and self.clients[user['name']] is conn:
+                    del self.clients[user['name']]
+            except Exception:
+                pass
             conn.close()
 
     def run(self):

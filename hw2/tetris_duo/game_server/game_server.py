@@ -6,9 +6,11 @@ import socket, threading, time, sys, random
 from common.protocol import send_msg, recv_msg
 from game_server.tetris_logic import Board
 from lobby_server.db_client import DBClient
-
-DB_HOST = '127.0.0.1'
-DB_PORT = 10001
+try:
+    from config import DB_HOST, DB_PORT, GAME_BIND_HOST
+except Exception:
+    DB_HOST, DB_PORT = '127.0.0.1', 10001
+    GAME_BIND_HOST = '0.0.0.0'
 
 class PlayerConn:
     def __init__(self, conn, name):
@@ -100,7 +102,7 @@ def game_tick_loop(start_time):
         tick += 1
         time.sleep(0.5)
 
-    # game over: write gamelog
+    # game over: write gamelog + broadcast GAME_OVER
     db = DBClient(DB_HOST, DB_PORT)
     end_time = int(time.time()*1000)
     g = {
@@ -115,6 +117,10 @@ def game_tick_loop(start_time):
         g['results'].append({'userId': name, 'score': p.board.score, 'lines': p.board.lines})
     db.create('GameLog', g)
     print(f"[Game] Winner: {winner}")
+    summary = {name: {'score': p.board.score, 'lines': p.board.lines} for name, p in players.items()}
+    payload = {'type': 'GAME_OVER', 'winner': winner, 'summary': summary}
+    for p in players.values():
+        p.send(payload)
 
 def main():
     port = 10002
@@ -125,7 +131,7 @@ def main():
             pass
     s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-    s.bind(('0.0.0.0', port))
+    s.bind((GAME_BIND_HOST, port))
     s.listen(2)
     print(f"[Game] Waiting for players on {port}...")
 

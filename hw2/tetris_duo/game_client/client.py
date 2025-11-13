@@ -7,6 +7,11 @@ sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import threading
 from game_client.network import NetworkClient
+try:
+    from config import LOBBY_HOST, LOBBY_PORT, GAME_CONNECT_HOST
+except Exception:
+    LOBBY_HOST, LOBBY_PORT = '127.0.0.1', 10000
+    GAME_CONNECT_HOST = '127.0.0.1'
 from game_client.renderer import Renderer
 from game_client.input_handler import InputHandler
 from common.protocol import send_msg, recv_msg
@@ -14,11 +19,13 @@ from lobby_server.db_client import DBClient
 import pygame
 
 class GameClientApp:
-    def __init__(self, lobby_host='127.0.0.1', lobby_port=10000, direct=None):
+    def __init__(self, lobby_host=LOBBY_HOST, lobby_port=LOBBY_PORT, direct=None):
         self.name = None # 將在登入後設定
         self.lobby_host = lobby_host
         self.lobby_port = lobby_port
         self.lobby_sock = None
+        self.current_room_id = None
+        self.is_room_host = False
         # direct: (host, port) 直接連到 Game Server
         if direct:
             host, port = direct
@@ -211,29 +218,39 @@ class GameClientApp:
                         print(f"[Client] 偵測到房間已開始，game_port={game_port}")
                         break
         
-        self.lobby_sock.close()
+        # 記錄房間資訊（不關閉 lobby 連線）
+        self.current_room_id = room_id
+        self.is_room_host = is_host
 
         if not game_port:
             print("[Client] 等待對手或 game_port 超時。")
             return
 
-        self.start_game_connection('127.0.0.1', game_port)
+        self.start_game_connection(GAME_CONNECT_HOST, game_port, room_id)
 
-    def start_game_connection(self, game_host, game_port):
+    def start_game_connection(self, game_host, game_port, room_id):
         print(f"[Client] Connecting to Game Server at {game_host}:{game_port}")
-        time.sleep(1) # wait for game server to start
+        time.sleep(1)  # wait for game server to start
         self.renderer = Renderer()
         self.input_handler = InputHandler(None)  # 先建立，稍後補上 network
         self._welcome_data = None
+        self._game_over = None
+
         def on_welcome(msg):
             self._welcome_data = msg
-        # 用 NetworkClient 並指定 on_welcome callback
-        self.net = NetworkClient(game_host, game_port, on_snapshot=self.on_snapshot, on_welcome=on_welcome)
+
+        def on_game_over(msg):
+            self._game_over = msg
+
+        # 用 NetworkClient 並指定 callbacks
+        self.net = NetworkClient(game_host, game_port, on_snapshot=self.on_snapshot, on_welcome=on_welcome, on_game_over=on_game_over)
         if not self.net.connected:
             print("[Client] 無法連線到 Game Server。")
             return
+
         # 送 HELLO
         self.net.hello(userId=self.name)
+
         # 等待 WELCOME callback
         wait_start = time.time()
         while self._welcome_data is None and self.net.connected and time.time() - wait_start < 5:
@@ -242,41 +259,86 @@ class GameClientApp:
         if not welcome:
             print("[Client] 沒收到 WELCOME 或連線中斷。")
             return
+
         role = welcome.get('role', 'P1')
         seed = welcome.get('seed')
-        start_time = int(time.time()*1000)
-        room_id = game_port  # 以 port 當作房間 id
-        self.renderer.set_room_info(room_id, role, start_time, user_name=self.name)
+        start_time = int(time.time() * 1000)
+        effective_room_id = room_id if room_id is not None else game_port
+        self.renderer.set_room_info(effective_room_id, role, start_time, user_name=self.name)
         self.input_handler.network = self.net  # 補上 network
+
         # 主迴圈：分離事件輪詢與渲染，降低 pygame 事件衝突
-        while True:
+        while self._game_over is None:
             self.input_handler.pump()  # 處理鍵盤事件並送出
             if self.input_handler.quit_requested or not self.net.connected:
                 break
             self.renderer.render_frame()  # 單幀渲染
 
-        # 遊戲迴圈結束（玩家關閉視窗或斷線），回到 Lobby（若非直連模式）
+        # 遊戲迴圈結束（玩家關閉視窗或斷線）
         try:
             import pygame
             pygame.display.quit()
             pygame.quit()
         except Exception:
             pass
-        # 回到 Lobby（非直連模式）
-        if self.lobby_host and self.lobby_port and self.name and self.lobby_sock is None:
-            if self._connect_to_lobby():
-                res = self._lobby_req(self.lobby_sock, {"action": "login", "data": {"name": self.name, "password": ""}})
-                if res and res.get('status') == 'ok':
-                    print("[Client] 已返回 Lobby。")
+
+        # 若遊戲正常結束（收到 GAME_OVER）
+        if self._game_over:
+            print("\n=== 對局結束 ===")
+            winner = self._game_over.get('winner')
+            summary = self._game_over.get('summary', {})
+            if winner:
+                print(f"勝方: {winner}")
+            else:
+                print("平手！")
+            print("成績:")
+            for n, info in summary.items():
+                print(f" - {n}: 分數 {info.get('score')} 行 {info.get('lines')}")
+            self._room_post_game_loop(effective_room_id)
+        else:
+            # 非正常：玩家中途退出或斷線，回到 Lobby 選單
+            if self.lobby_sock:
+                print("[Client] 對局中途結束，返回 Lobby 選單。")
+                self.lobby_menu()
+            else:
+                self.main_menu()
+
+    def _room_post_game_loop(self, room_id):
+        # 讓房主可以選擇再戰，其他玩家等待
+        while True:
+            if self.is_room_host:
+                print("\n房間選項: 1=再戰 (Start Again)  2=退出房間回 Lobby  3=離開程式")
+                opt = input("選擇: ")
+                if opt == '1':
+                    # 房主啟動 start_game
+                    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s_check:
+                        s_check.connect((self.lobby_host, self.lobby_port))
+                        self._lobby_req(s_check, {"action": "login", "data": {"name": self.name, "password": ""}})
+                        sg = self._lobby_req(s_check, {"action": "start_game", "data": {"room_id": room_id}})
+                        if sg and sg.get('status') == 'ok':
+                            game_port = sg.get('game_port')
+                            print(f"[Client] 再戰開始，game_port={game_port}")
+                            self.start_game_connection(GAME_CONNECT_HOST, game_port, room_id)
+                            return
+                        else:
+                            print("[Client] 無法啟動再戰，可能人數不足。")
+                elif opt == '2':
+                    print("[Client] 離開房間，返回 Lobby 選單。")
                     self.lobby_menu()
+                    return
+                elif opt == '3':
+                    print("[Client] 再見！")
+                    return
                 else:
-                    print("[Client] 返回 Lobby 失敗，請從主選單重新登入。")
-                    try:
-                        self.lobby_sock.close()
-                    except Exception:
-                        pass
-                    self.lobby_sock = None
-                    self.main_menu()
+                    print("無效選項。")
+            else:
+                print("等待房主選擇是否再戰，或輸入 q 退出房間回 Lobby。")
+                ipt = input("(q 退出): ")
+                if ipt.lower() == 'q':
+                    print("[Client] 離開房間，返回 Lobby 選單。")
+                    self.lobby_menu()
+                    return
+                # 其他輸入忽略，繼續等待
 
     def on_snapshot(self, msg):
         if msg.get('type') != 'SNAPSHOT':
@@ -305,7 +367,7 @@ class GameClientApp:
         if not self.name:
             self.name = input("請輸入您的名稱 (Your Name): ") or "Player"
         try:
-            self.start_game_connection(host, int(port))
+            self.start_game_connection(host, int(port), None)
         except Exception as e:
             print(f"[Client] 連線失敗或中斷: {e}")
             print("提示：請先在另一個終端啟動 Game Server，例如：\n  uv run -m game_server.game_server 10002")

@@ -19,6 +19,13 @@
       "name": "usera",
       "id": 4,
       "createdAt": 1762967640876
+    },
+    {
+      "name": "userb",
+      "pw_salt": "a6a09a8e61825a772484400a6efe8b9a",
+      "pw_hash": "16156f7ef126580cdcbcfff3937a12f34cfd1b28ae1df1d137c80b21646ee63e",
+      "id": 5,
+      "createdAt": 1763000159668
     }
   ],
   "Room": [
