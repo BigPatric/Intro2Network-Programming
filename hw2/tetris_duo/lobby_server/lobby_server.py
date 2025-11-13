@@ -158,6 +158,10 @@ class LobbyServer:
                     if not room or len(room['players']) < 2:
                         send_msg(conn, {'error': 'need 2 players to start'})
                         continue
+                    # 僅房主可開始
+                    if user['name'] != room['hostUserId']:
+                        send_msg(conn, {'error': 'only host can start'})
+                        continue
                     port = self._pick_port()
                     # Launch game server with port argument
                     proc = self._launch_game_server(rid, port)
@@ -166,6 +170,13 @@ class LobbyServer:
                     room['game_port'] = port  # <--- 關鍵：同步更新 RoomManager 內的 room
                     self.db.update('Room', 'id', rid, {'status': 'playing', 'game_port': port})
                     send_msg(conn, {'status': 'ok', 'game_port': port})
+                elif action == 'watch_game':
+                    rid = data.get('room_id')
+                    room = self.rooms.join_spectator(rid, user['name'])
+                    if room is None:
+                        send_msg(conn, {'error': 'no such room'})
+                    else:
+                        send_msg(conn, {'status': 'ok', 'room': room})
 
                 else:
                     send_msg(conn, {'error': 'unknown action'})

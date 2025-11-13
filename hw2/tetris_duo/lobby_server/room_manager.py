@@ -15,10 +15,20 @@ class RoomManager:
                 'visibility': visibility,
                 'inviteList': [],
                 'players': [host_user],
+                'spectators': [],  # 新增觀戰者列表
                 'status': 'idle',
                 'createdAt': int(time.time()*1000)
             }
             self.rooms[rid] = room
+            return room
+    def join_spectator(self, rid, user):
+        with self.lock:
+            room = self.rooms.get(rid)
+            if not room:
+                return None
+            if user in room['spectators']:
+                return room  # 已在觀戰名單
+            room['spectators'].append(user)
             return room
 
     def list_public(self):
