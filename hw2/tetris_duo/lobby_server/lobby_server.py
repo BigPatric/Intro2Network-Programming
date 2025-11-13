@@ -63,7 +63,7 @@ class LobbyServer:
         # Launch local game server as a subprocess. Assumes game_server/game_server.py exists.
         # On course machines, ensure python path and working dir are correct.
         try:
-            cmd = ['uv', 'run', '-m', 'game_server.game_server', str(port)]
+            cmd = ['python3', '-m', 'game_server.game_server', str(port)]
             self.game_servers[room_id] = subprocess.Popen(cmd, cwd=self.project_root)
             return self.game_servers[room_id]
         except Exception as e:
