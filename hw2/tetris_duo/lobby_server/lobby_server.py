@@ -154,8 +154,14 @@ class LobbyServer:
 
                 elif action == 'start_game':
                     rid = data.get('room_id')
+                    if user is None:
+                        send_msg(conn, {'error': 'user not found'})
+                        continue
                     room = self.rooms.rooms.get(rid)
-                    if not room or len(room['players']) < 2:
+                    if not room:
+                        send_msg(conn, {'error': 'no such room'})
+                        continue
+                    if len(room['players']) < 2:
                         send_msg(conn, {'error': 'need 2 players to start'})
                         continue
                     # 僅房主可開始
@@ -172,6 +178,9 @@ class LobbyServer:
                     send_msg(conn, {'status': 'ok', 'game_port': port})
                 elif action == 'watch_game':
                     rid = data.get('room_id')
+                    if user is None:
+                        send_msg(conn, {'error': 'user not found'})
+                        continue
                     room = self.rooms.join_spectator(rid, user['name'])
                     if room is None:
                         send_msg(conn, {'error': 'no such room'})
