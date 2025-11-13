@@ -71,12 +71,13 @@ class GameClientApp:
 
     def _login(self):
         name = input("請輸入您的名稱 (Your Name): ")
+        password = input("請輸入密碼 (Password): ")
         if not name:
             return False
         if not self._connect_to_lobby():
             return False
-        
-        res = self._lobby_req(self.lobby_sock, {"action": "login", "data": {"name": name}})
+        req_data = {"action": "login", "data": {"name": name, "password": password}}
+        res = self._lobby_req(self.lobby_sock, req_data)
         if res and res.get('status') == 'ok':
             self.name = name # 登入成功，設定客戶端名稱
             return True
@@ -84,12 +85,17 @@ class GameClientApp:
 
     def _register(self):
         name = input("請輸入要註冊的名稱 (Choose a Name): ")
+        password = input("請設定密碼 (Set Password): ")
+        confirm = input("再次輸入密碼 (Confirm Password): ")
+        if password != confirm:
+            print("兩次密碼不一致。")
+            return False
         if not name:
             return False
         if not self._connect_to_lobby():
             return False
 
-        res = self._lobby_req(self.lobby_sock, {"action": "register", "data": {"name": name}})
+        res = self._lobby_req(self.lobby_sock, {"action": "register", "data": {"name": name, "password": password}})
         self.lobby_sock.close() # 註冊完就斷線，讓使用者重新登入
         if res and res.get('status') == 'ok':
             return True
@@ -181,7 +187,8 @@ class GameClientApp:
                 # 為了不阻塞，我們用一個新的短連線來操作
                 with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s_check:
                     s_check.connect((self.lobby_host, self.lobby_port))
-                    self._lobby_req(s_check, {"action": "login", "data": {"name": self.name}})
+                    # 重新建立短連線時，使用空密碼即可通過舊帳號（無密碼）的相容流程
+                    self._lobby_req(s_check, {"action": "login", "data": {"name": self.name, "password": ""}})
                     lr = self._lobby_req(s_check, {"action": "list_rooms"})
                     my_room = next((r for r in lr.get('rooms', []) if r.get('id') == room_id), None)
 
@@ -196,7 +203,7 @@ class GameClientApp:
                 # 我們也用短連線來查詢，避免主連線邏輯混亂
                 with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s_check:
                     s_check.connect((self.lobby_host, self.lobby_port))
-                    self._lobby_req(s_check, {"action": "login", "data": {"name": self.name}})
+                    self._lobby_req(s_check, {"action": "login", "data": {"name": self.name, "password": ""}})
                     res = self._lobby_req(s_check, {"action": "list_rooms"})
                     my_room = next((r for r in res.get('rooms', []) if r.get('id') == room_id), None)
                     if my_room and my_room.get('game_port'):
@@ -239,7 +246,7 @@ class GameClientApp:
         seed = welcome.get('seed')
         start_time = int(time.time()*1000)
         room_id = game_port  # 以 port 當作房間 id
-        self.renderer.set_room_info(room_id, role, start_time)
+        self.renderer.set_room_info(room_id, role, start_time, user_name=self.name)
         self.input_handler.network = self.net  # 補上 network
         # 主迴圈：分離事件輪詢與渲染，降低 pygame 事件衝突
         while True:
@@ -255,12 +262,21 @@ class GameClientApp:
             pygame.quit()
         except Exception:
             pass
+        # 回到 Lobby（非直連模式）
         if self.lobby_host and self.lobby_port and self.name and self.lobby_sock is None:
-            # 嘗試重新登入 Lobby（忽略失敗）
             if self._connect_to_lobby():
-                self._lobby_req(self.lobby_sock, {"action": "login", "data": {"name": self.name}})
-                print("[Client] 已返回 Lobby。")
-                self.lobby_menu()
+                res = self._lobby_req(self.lobby_sock, {"action": "login", "data": {"name": self.name, "password": ""}})
+                if res and res.get('status') == 'ok':
+                    print("[Client] 已返回 Lobby。")
+                    self.lobby_menu()
+                else:
+                    print("[Client] 返回 Lobby 失敗，請從主選單重新登入。")
+                    try:
+                        self.lobby_sock.close()
+                    except Exception:
+                        pass
+                    self.lobby_sock = None
+                    self.main_menu()
 
     def on_snapshot(self, msg):
         if msg.get('type') != 'SNAPSHOT':

@@ -36,11 +36,15 @@ class Renderer:
         self.room_id = None
         self.role = None
         self.start_time = None
-        self.duration_sec = 30
-    def set_room_info(self, room_id, role, start_time=None):
+        # 與伺服器 game_server.game_server 的 duration_sec (60s) 對齊
+        self.duration_sec = 60
+        self.user_name = None
+    def set_room_info(self, room_id, role, start_time=None, user_name=None):
         self.room_id = room_id
         self.role = role
         self.start_time = start_time or int(time.time()*1000)
+        if user_name:
+            self.user_name = user_name
 
     def update_state(self, my_state, opp_state):
         now = int(time.time()*1000)
@@ -121,7 +125,8 @@ class Renderer:
         shape = act.get('shape')
         ax = act.get('x')
         ay = act.get('y')
-        mat = SHAPES.get(shape)
+        # 伺服器若提供當前旋轉矩陣，優先使用；否則退回到預設形狀
+        mat = act.get('mat') or SHAPES.get(shape)
         if mat is not None and ax is not None and ay is not None:
             for ry, r in enumerate(mat):
                 for rx, v in enumerate(r):
@@ -137,22 +142,43 @@ class Renderer:
         self.opp_state = self._pick_buffered(self.opp_queue) or self.opp_state
         self.screen.fill((30,30,30))
 
-        # 顯示房間與角色
-        if self.room_id and self.role:
-            txt = self.font.render(f'房間: {self.room_id} 角色: {self.role}', True, (255,255,0))
-            self.screen.blit(txt, (MARGIN, MARGIN))
+        # Show room, role, user name
+        info_text = f'Room: {self.room_id if self.room_id else "-"} Role: {self.role if self.role else "-"}'
+        if self.user_name:
+            info_text += f'  Player: {self.user_name}'
+        txt = self.font.render(info_text, True, (255,255,0))
+        self.screen.blit(txt, (MARGIN, MARGIN))
 
-        # 顯示計時器
+        # Show timer (mm:ss)
         if self.start_time:
             now = int(time.time()*1000)
             remain = max(0, self.duration_sec - (now - self.start_time)//1000)
-            timer_txt = self.font.render(f'倒數: {remain:02d}s', True, (255,100,100))
+            mm = remain // 60
+            ss = remain % 60
+            timer_txt = self.font.render(f'Time left: {mm:01d}:{ss:02d}', True, (255,100,100))
             self.screen.blit(timer_txt, (MARGIN, MARGIN+40))
 
-        # 放大自己的操作畫面
+        # Enlarge own board
         self.draw_compact_board(MARGIN, MARGIN+80, self.my_state, scale=2)
-        # 對手畫面正常大小
+        # Opponent board normal size
         self.draw_compact_board(600, MARGIN+80, self.opp_state, scale=1)
+
+        # Controls hint (bottom right)
+        tips = [
+            "Controls:",
+            "← →: Move left/right",
+            "Z: Rotate piece ",
+            "↓: Soft drop",
+            "Space: Hard drop",
+            "C: Hold piece",
+            "Q: Quit game"
+        ]
+        # 計算右下角起始座標
+        tip_x = self.screen.get_width() - 320
+        tip_y = self.screen.get_height() - (len(tips)*22) - 30
+        for i, tip in enumerate(tips):
+            tip_txt = self.small_font.render(tip, True, (180,220,255))
+            self.screen.blit(tip_txt, (tip_x, tip_y + i*22))
 
         pygame.display.flip()
         self.clock.tick(60)

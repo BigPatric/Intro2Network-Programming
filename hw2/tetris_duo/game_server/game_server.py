@@ -72,9 +72,19 @@ def broadcast_tempo(plan):
 def game_tick_loop(start_time):
     tick = 0
     winner = None
+    duration_sec = 60 
     while True:
         now = int(time.time() * 1000)
         active_players = [p for p in players.values() if p.alive and not p.board.game_over]
+        # 時間到直接結束比賽
+        if (now - start_time) // 1000 >= duration_sec:
+            # 依分數決定勝負
+            scores = {name: p.board.score for name, p in players.items()}
+            max_score = max(scores.values())
+            winners = [name for name, score in scores.items() if score == max_score]
+            winner = winners[0] if len(winners) == 1 else None  # 平手 winner=None
+            print(f"[Game] Time up! Scores: {scores}")
+            break
         # 有一方死亡就結束
         if len(active_players) < len(players):
             # 找出還活著的玩家
@@ -82,7 +92,6 @@ def game_tick_loop(start_time):
                 if p.alive and not p.board.game_over:
                     winner = name
             break
-        
         for p in active_players:
             p.board.tick()
             if p.board.game_over:

@@ -112,9 +112,9 @@ class Board:
 
     def rotate(self):
         new_mat = rotate_matrix(self.active['mat'])
-        # simple wall-kick: try original, left, right, up
-        tests = [(0,0),(-1,0),(1,0),(0,-1)]
-        for dx, dy in tests:
+        # SRS-like wall-kick: try more positions
+        kicks = [(0,0),(-1,0),(1,0),(0,-1),(-2,0),(2,0),(0,-2),(0,1)]
+        for dx, dy in kicks:
             if not self.collides(self.active['x']+dx, self.active['y']+dy, new_mat):
                 self.active['mat'] = new_mat
                 self.active['x'] += dx
@@ -161,7 +161,13 @@ class Board:
     def snapshot(self):
         return {
             'boardRLE': self.board_rle(),
-            'active': {'shape': self.active['shape'], 'x': self.active['x'], 'y': self.active['y']},
+            # 傳回目前作用方塊的旋轉矩陣，讓前端能正確渲染旋轉狀態
+            'active': {
+                'shape': self.active['shape'],
+                'x': self.active['x'],
+                'y': self.active['y'],
+                'mat': self.active['mat'],
+            },
             'hold': self.hold,
             'next': self.next_queue[:3],
             'score': self.score,

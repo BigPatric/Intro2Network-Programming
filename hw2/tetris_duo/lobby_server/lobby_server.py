@@ -2,6 +2,7 @@ import sys
 import os
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 import socket, threading, subprocess, random
+import hashlib, os, binascii
 from common.protocol import send_msg, recv_msg
 from lobby_server.db_client import DBClient
 from lobby_server.room_manager import RoomManager
@@ -24,6 +25,24 @@ class LobbyServer:
         self.active_game_procs = {}
         self.game_servers = {}  # 用來追蹤遊戲伺服器進程
         self.project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+    # --- Password utilities (PBKDF2-HMAC-SHA256) ---
+    def _hash_password(self, password: str, salt: bytes | None = None):
+        if salt is None:
+            salt = os.urandom(16)
+        # 100k iterations; returns hex strings for storage
+        dk = hashlib.pbkdf2_hmac('sha256', password.encode('utf-8'), salt, 100_000)
+        return binascii.hexlify(salt).decode('ascii'), binascii.hexlify(dk).decode('ascii')
+
+    def _verify_password(self, password: str, salt_hex: str, hash_hex: str) -> bool:
+        try:
+            salt = binascii.unhexlify(salt_hex.encode('ascii'))
+            expected = binascii.unhexlify(hash_hex.encode('ascii'))
+            cand = hashlib.pbkdf2_hmac('sha256', password.encode('utf-8'), salt, 100_000)
+            # constant-time compare
+            return hashlib.sha256(cand).digest() == hashlib.sha256(expected).digest()
+        except Exception:
+            return False
 
     def _pick_port(self):
         # naive random pick, ensure not used
@@ -56,16 +75,47 @@ class LobbyServer:
                 data = msg.get('data', {})
 
                 if action == 'register':
-                    res = self.db.create('User', data)
-                    send_msg(conn, res)
+                    name = (data.get('name') or '').strip()
+                    password = data.get('password') or ''
+                    if not name or not password:
+                        send_msg(conn, {'error': 'name and password required'})
+                        continue
+                    # duplicate check
+                    exist = self.db.query('User', {'name': name}).get('result', [])
+                    if exist:
+                        send_msg(conn, {'error': 'user exists'})
+                        continue
+                    salt_hex, hash_hex = self._hash_password(password)
+                    user = {'name': name, 'pw_salt': salt_hex, 'pw_hash': hash_hex}
+                    res = self.db.create('User', user)
+                    if res.get('status') == 'ok':
+                        send_msg(conn, {'status': 'ok'})
+                    else:
+                        send_msg(conn, {'error': 'db error'})
 
                 elif action == 'login':
-                    r = self.db.query('User', {'name': data.get('name')})
+                    name = (data.get('name') or '').strip()
+                    password = data.get('password') or ''
+                    r = self.db.query('User', {'name': name})
                     rows = r.get('result', [])
                     if rows:
                         user = rows[0]
+                        salt_hex = user.get('pw_salt')
+                        hash_hex = user.get('pw_hash')
+                        if salt_hex and hash_hex:
+                            if not password:
+                                send_msg(conn, {'error': 'password required'})
+                                continue
+                            if not self._verify_password(password, salt_hex, hash_hex):
+                                send_msg(conn, {'error': 'invalid credential'})
+                                continue
+                        else:
+                            # legacy user without password set: only allow empty password
+                            if password:
+                                send_msg(conn, {'error': 'password not set; use empty password or re-register'})
+                                continue
                         self.clients[user['name']] = conn
-                        send_msg(conn, {'status': 'ok', 'user': user})
+                        send_msg(conn, {'status': 'ok', 'user': {'name': user['name'], 'id': user.get('id')}})
                     else:
                         send_msg(conn, {'error': 'user not found'})
 
