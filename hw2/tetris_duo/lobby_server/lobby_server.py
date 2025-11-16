@@ -135,7 +135,10 @@ class LobbyServer:
                 elif action == 'list_rooms':
                     send_msg(conn, {'rooms': self.rooms.list_public()})
                 elif action == 'list_users':
-                    send_msg(conn, {'users': list(self.clients.keys())})
+                    db_res = self.db.query('User', {'is_online': True})
+                    users = [u.get('name') for u in db_res.get('result', [])]
+                    send_msg(conn, {'users': users})
+
 
                 elif action == 'create_room':
                     if not user:

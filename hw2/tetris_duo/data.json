@@ -18,7 +18,8 @@
       "pw_salt": "dfffd1bd4d62a69574796ef65c5d3bb1",
       "pw_hash": "6bcd3895ff4bf4c7efbba5c052fc514686a5c43071ebaf59e1b60766d13befb8",
       "id": 6,
-      "createdAt": 1763321304248
+      "createdAt": 1763321304248,
+      "is_online": false
     }
   ],
   "Room": [
