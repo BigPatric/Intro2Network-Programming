@@ -13,7 +13,7 @@ class InputHandler:
     def __init__(self, network):
         self.network = network
         self.quit_requested = False
-        self.last_rot_time = 0  # 防抖用
+        self.last_rot_time = 0
 
     def pump(self):
         for e in pygame.event.get():

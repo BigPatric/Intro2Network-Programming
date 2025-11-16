@@ -1,7 +1,7 @@
 import sys
 import os
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
-# Arg: optional port
+# Optional port arg
 import socket, threading, time, sys, random
 from common.protocol import send_msg, recv_msg
 from game_server.tetris_logic import Board
@@ -27,7 +27,7 @@ class PlayerConn:
 
 players = {}
 
-# Global game parameters (seed, bag rule, gravity/tempo)
+# Game params: seed, bag, gravity
 GAME_SEED = None
 BAG_RULE = '7bag'
 GRAVITY_PLAN = {"mode": "fixed", "dropMs": 500}
@@ -55,7 +55,7 @@ def handle_input(pconn: PlayerConn):
             elif act == 'HOLD':
                 pconn.board.hold_piece()
         elif tp == 'HELLO':
-            # Ignore here; WELCOME is sent at join time in main()
+            # Ignore; WELCOME sent in main()
             pass
 
 
@@ -78,18 +78,18 @@ def game_tick_loop(start_time):
     while True:
         now = int(time.time() * 1000)
         active_players = [p for p in players.values() if p.alive and not p.board.game_over]
-        # 時間到直接結束比賽
+        # End by time
         if (now - start_time) // 1000 >= duration_sec:
-            # 依分數決定勝負
+            # Decide winner by score
             scores = {name: p.board.score for name, p in players.items()}
             max_score = max(scores.values())
             winners = [name for name, score in scores.items() if score == max_score]
-            winner = winners[0] if len(winners) == 1 else None  # 平手 winner=None
+            winner = winners[0] if len(winners) == 1 else None  # Tie: winner=None
             print(f"[Game] Time up! Scores: {scores}")
             break
-        # 有一方死亡就結束
+        # End if someone dies
         if len(active_players) < len(players):
-            # 找出還活著的玩家
+            # Find alive player
             for name, p in players.items():
                 if p.alive and not p.board.game_over:
                     winner = name
@@ -102,7 +102,7 @@ def game_tick_loop(start_time):
         tick += 1
         time.sleep(0.5)
 
-    # game over: write gamelog + broadcast GAME_OVER
+    # Game over: log & broadcast
     db = DBClient(DB_HOST, DB_PORT)
     end_time = int(time.time()*1000)
     g = {
@@ -144,7 +144,7 @@ def main():
         name = hello.get('userId', f'P{len(players)+1}') if hello else f'P{len(players)+1}'
         pconn = PlayerConn(conn, name)
         players[name] = pconn
-        # 先回覆 WELCOME，包含角色、隨機種子、bag 規則與節奏
+        # Reply WELCOME with role, seed, bag, gravity
         role = 'P1' if len(players) == 1 else 'P2'
         try:
             send_msg(conn, {
@@ -159,14 +159,14 @@ def main():
         threading.Thread(target=handle_input, args=(pconn,), daemon=True).start()
         print(f"[Game] Player joined: {name}")
 
-    # start game loop
-    # 統一重建玩家棋盤，確保使用相同的 seed 與 7-bag 順序
+    # Start game loop
+    # Rebuild boards with same seed & bag
     for p in players.values():
         p.board = Board(seed=GAME_SEED)
 
-    # 廣播一次 TEMPO 訊息
+    # Broadcast TEMPO
     broadcast_tempo(GRAVITY_PLAN)
-    # 遊戲開始前送出一次初始快照
+    # Send initial snapshot
     broadcast_snapshot(tick=0)
     game_tick_loop(start_time)
 

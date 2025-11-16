@@ -56,9 +56,70 @@
         - 以輸入事件驅動，並每 0.5 秒廣播 SNAPSHOT；客戶端採用約 150ms 的渲染緩衝以平滑顯示。
 - 結束條件：採用「存活賽」為主；若 60 秒內未分出勝負，以分數較高者勝（作為平手決勝）。
 
-## 新增功能與設定（本次更新）
+    ## 系統資料流與協定說明
 
-1. 防止重複登入：同一帳號同時只能有一個有效 Lobby 連線。第二個登入請求會收到 `already logged in elsewhere` 錯誤訊息。
+    ### 整體架構
+
+    - **Client** 透過 Lobby Server 註冊/登入、建立/加入房間，並由 Lobby Server 分配 Game Server 埠口。
+    - **Lobby Server** 管理房間、玩家狀態，並與 DB Server 溝通帳號/房間資料。
+    - **DB Server** 單純負責資料 CRUD，所有請求皆透過 JSON 格式傳遞。
+    - **Game Server** 負責遊戲邏輯，僅接收玩家操作（INPUT），並定時廣播遊戲快照（SNAPSHOT）與結束（GAME_OVER）。
+
+    ### 資料流
+
+    1. **Client <-> Lobby Server**
+         - 註冊/登入：`action: register/login`，資料包含 name/password。
+         - 房間操作：`action: create_room/join_room/list_rooms/start_game`。
+         - Lobby Server 回應 JSON，並根據需求與 DB Server 或 Game Server 互動。
+
+    2. **Lobby Server <-> DB Server**
+         - 以 JSON 格式傳送 CRUD 請求，例如：
+             ```json
+             {"action": "create", "table": "User", "data": {...}}
+             ```
+         - DB Server 回傳操作結果。
+
+    3. **Lobby Server <-> Game Server**
+         - 當房主啟動遊戲時，Lobby Server 以 subprocess 方式啟動 Game Server 並分配埠口。
+         - 房間狀態更新，並通知 Client 連線至指定 Game Server 埠。
+
+    4. **Client <-> Game Server**
+         - 連線後，Client 送出 `HELLO`（userId），Game Server 回傳 `WELCOME`（seed、bagRule、gravityPlan）。
+         - Client 送出操作（INPUT），Game Server 定時廣播 `SNAPSHOT`，遊戲結束時廣播 `GAME_OVER`。
+
+    ### Protocol 格式
+
+    - 所有訊息皆以 JSON 格式，並以 4 bytes 長度前綴（見 `common/protocol.py`）。
+    - 主要訊息範例：
+        - 註冊/登入：
+            ```json
+            {"action": "register", "data": {"name": "Alice", "password": "pw"}}
+            ```
+        - 遊戲操作：
+            ```json
+            {"type": "INPUT", "action": "LEFT"}
+            ```
+        - 遊戲快照：
+            ```json
+            {"type": "SNAPSHOT", "tick": 10, "players": {"Alice": {...}, "Bob": {...}}}
+            ```
+        - 遊戲結束：
+            ```json
+            {
+                "type": "GAME_OVER",
+                "winner": "Alice",
+                "summary": {
+                    "Alice": {"score": 1200, "lines": 10},
+                    "Bob":   {"score": 800,  "lines": 8}
+                }
+            }
+            ```
+
+    - 詳細協定請參考 `common/protocol.py`，所有 socket 傳輸皆採用：
+        1. 4 bytes 長度（big-endian）
+        2. UTF-8 編碼 JSON
+
+    ---
 2. 對局結束返回房間：Game Server 對局結束時會向雙方廣播 `GAME_OVER`。Client 進入房間後的「再戰 / 離開房間」選單，房主可直接啟動下一局，玩家可選擇退出回 Lobby。
 3. 統一設定檔：新增 `config.py`，集中所有 Host/Port 常數：
      - `LOBBY_HOST`, `LOBBY_PORT`

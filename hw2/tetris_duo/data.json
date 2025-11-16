@@ -1,21 +1,6 @@
 {
   "User": [
     {
-      "name": "player",
-      "id": 1,
-      "createdAt": 1762967049910
-    },
-    {
-      "name": "player",
-      "id": 2,
-      "createdAt": 1762967075773
-    },
-    {
-      "name": "player",
-      "id": 3,
-      "createdAt": 1762967311006
-    },
-    {
       "name": "usera",
       "id": 4,
       "createdAt": 1762967640876
@@ -25,7 +10,15 @@
       "pw_salt": "a6a09a8e61825a772484400a6efe8b9a",
       "pw_hash": "16156f7ef126580cdcbcfff3937a12f34cfd1b28ae1df1d137c80b21646ee63e",
       "id": 5,
-      "createdAt": 1763000159668
+      "createdAt": 1763000159668,
+      "is_online": false
+    },
+    {
+      "name": "userc",
+      "pw_salt": "dfffd1bd4d62a69574796ef65c5d3bb1",
+      "pw_hash": "6bcd3895ff4bf4c7efbba5c052fc514686a5c43071ebaf59e1b60766d13befb8",
+      "id": 6,
+      "createdAt": 1763321304248
     }
   ],
   "Room": [
