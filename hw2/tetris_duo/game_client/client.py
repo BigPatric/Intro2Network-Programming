@@ -172,7 +172,13 @@ class GameClientApp:
         if not room_name:
             room_name = f"Room-{self.name}"
         
-        res = self._lobby_req(self.lobby_sock, {"action": "create_room", "data": {"name": room_name}})
+        visibility = input("房間類型？(public/private，預設 public): ").strip().lower()
+        if visibility not in ("public", "private"):
+            visibility = "public"
+        res = self._lobby_req(self.lobby_sock, {
+            "action": "create_room",
+            "data": {"name": room_name, "visibility": visibility}
+        })
         if res and res.get('status') == 'ok':
             room = res['room']
             print(f"[Client] 已建立房間 #{room['id']}，等待另一位玩家加入...")

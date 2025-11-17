@@ -133,7 +133,14 @@ class LobbyServer:
                         send_msg(conn, {'error': 'user not found'})
 
                 elif action == 'list_rooms':
-                    send_msg(conn, {'rooms': self.rooms.list_public()})
+                    db_rooms = self.db.query('Room', {'visibility': 'public'}).get('result', [])
+                    mem_rooms = self.rooms.list_public()
+                    # 取交集：只顯示同時存在於 DB 及記憶體的房間
+                    db_ids = set(r.get('id') for r in db_rooms if r.get('id') is not None)
+                    mem_ids = set(r.get('id') for r in mem_rooms if r.get('id') is not None)
+                    intersect_ids = db_ids & mem_ids
+                    rooms = [r for r in mem_rooms if r.get('id') in intersect_ids]
+                    send_msg(conn, {'rooms': rooms})
                 elif action == 'list_users':
                     db_res = self.db.query('User', {'is_online': True})
                     users = [u.get('name') for u in db_res.get('result', [])]
@@ -144,7 +151,7 @@ class LobbyServer:
                     if not user:
                         send_msg(conn, {'error': 'not logged in'})
                         continue
-                    room = self.rooms.create(user['name'], name=data.get('name'))
+                    room = self.rooms.create(user['name'], name=data.get('name'), visibility=data.get('visibility', 'public'))
                     self.db.create('Room', room)
                     send_msg(conn, {'status': 'ok', 'room': room})
 
