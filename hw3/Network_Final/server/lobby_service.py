@@ -25,9 +25,10 @@ def handle_lobby_request(conn, request):
     
     # --- 帳號相關 (DB Manager 內部已有 connection 隔離，無需額外鎖) ---
     if cmd == 'login':
-        role = login_user(user, request.get('password'))
-        if role:
-            return {'status': 'success', 'role': role}
+        role = request.get('role')
+        db_role = login_user(user, request.get('password'), role)
+        if db_role:
+            return {'status': 'success', 'role': db_role}
         return {'status': 'fail', 'message': 'Invalid credentials'}
     
     elif cmd == 'register':

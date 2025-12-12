@@ -9,11 +9,12 @@ sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 
 # [Fix 1] 必須引入 send_file
 from common.protocol import recv_json, send_json, send_file
+from common.ip_port_config import SERVER_IP, SERVER_PORT
 from server.developer_service import handle_developer_upload
 from server.lobby_service import handle_lobby_request
 
-HOST = '0.0.0.0'
-PORT = 8888
+HOST = SERVER_IP
+PORT = SERVER_PORT
 UPLOAD_DIR = 'server/uploaded_games' # 定義上傳路徑常數
 
 def client_handler(conn, addr):

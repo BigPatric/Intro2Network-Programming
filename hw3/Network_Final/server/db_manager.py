@@ -14,7 +14,9 @@ def init_db():
         
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
+    
     # 使用者資料表
+    # username is prime key so duplicated username will raise error
     c.execute('''CREATE TABLE IF NOT EXISTS users
                  (username TEXT PRIMARY KEY, password TEXT, role TEXT)''')
     # 遊戲資料表
@@ -32,14 +34,18 @@ def register_user(username, password, role='player'):
         conn.commit()
         return True
     except sqlite3.IntegrityError:
+        # used username trigger error
         return False
     finally:
         conn.close()
 
-def login_user(username, password):
+def login_user(username, password, role):
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
-    c.execute("SELECT role FROM users WHERE username=? AND password=?", (username, password))
+    if role == 'developer':
+        c.execute("SELECT role FROM users WHERE username=? AND password=? AND role='developer'", (username, password))
+    else:
+        c.execute("SELECT role FROM users WHERE username=? AND password=? AND role='player'", (username, password))
     row = c.fetchone()
     conn.close()
     return row[0] if row else None

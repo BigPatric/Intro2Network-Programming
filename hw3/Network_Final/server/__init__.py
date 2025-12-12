@@ -28,10 +28,13 @@ def register_user(username, password, role='player'):
     finally:
         conn.close()
 
-def login_user(username, password):
+def login_user(username, password, role=None):
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
-    c.execute("SELECT role FROM users WHERE username=? AND password=?", (username, password))
+    if role:
+        c.execute("SELECT role FROM users WHERE username=? AND password=? AND role=?", (username, password, role))
+    else:
+        c.execute("SELECT role FROM users WHERE username=? AND password=?", (username, password))
     row = c.fetchone()
     conn.close()
     return row[0] if row else None

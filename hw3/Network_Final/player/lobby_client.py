@@ -8,9 +8,8 @@ import time
 
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 from common.protocol import send_json, recv_json, recv_file
+from common.ip_port_config import SERVER_IP, SERVER_PORT
 
-SERVER_IP = '127.0.0.1'
-PORT = 8888
 PLAYER_ID = "Player1" # 預設，登入後會改
 DOWNLOAD_BASE = f'player/downloads'
 
@@ -29,28 +28,29 @@ class LobbyClient:
             return False
 
     def login(self):
-        print("=== 登入/註冊 ===")
-        print("1. Login")
-        print("2. Register")
-        op = input("Select: ")
-        u = input("Username: ")
-        p = input("Password: ")
-        
-        cmd = 'login' if op == '1' else 'register'
-        send_json(self.sock, {'command': cmd, 'username': u, 'password': p, 'role': 'player'})
-        res = recv_json(self.sock)
-        
-        if res['status'] == 'success':
-            self.username = u
-            global PLAYER_ID, DOWNLOAD_BASE
-            PLAYER_ID = u
-            DOWNLOAD_BASE = f'player/downloads/{PLAYER_ID}'
-            if not os.path.exists(DOWNLOAD_BASE): os.makedirs(DOWNLOAD_BASE)
-            print(f"Welcome, {u}!")
-            return True
-        else:
-            print(f"Login failed: {res.get('message')}")
-            return False
+        while True:
+            print("=== Player 登入/註冊 ===")
+            print("1. Login")
+            print("2. Register")
+            print("3. Exit")
+            op = input("Select: ")
+            if op in ['1', '2']:
+                u = input("Username: ")
+                p = input("Password: ")
+                if u and p:
+                    cmd = 'login' if op == '1' else 'register'
+                    send_json(self.sock, {'command': cmd, 'username': u, 'password': p, 'role': 'player'})
+                    res = recv_json(self.sock)
+                    if res and res.get('status') == 'success':
+                        print(f"Welcome, {u}!")
+                        return True
+                    else:
+                        print(f"Failed: {res.get('message') if res else 'No response'}")
+                        continue
+            elif op == '3':
+                return False
+            else:
+                print("Invalid input, try again.")
 
     def download_game(self, game_name):
         # [Use Case P2]
