@@ -1,48 +1,78 @@
-# server/developer_service.py
 import os
-import zipfile # [Fix 4] 引入 zipfile
-from common.protocol import recv_file
-from server.db_manager import add_game_metadata
+import sys
+from common.protocol import send_json, recv_file
 
-UPLOAD_DIR = 'server/uploaded_games'
-EXTRACT_DIR = 'server/uploaded_games_extracted' # 解壓後的存放區
+sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 
-def handle_developer_upload(conn, request):
-    game_name = request.get('game_name')
-    if not game_name:
-        return {'status': 'fail', 'message': 'Missing game_name'}
+UPLOADED_GAMES_DIR = os.path.abspath("server/uploaded_games")
+EXTRACTED_GAMES_DIR = os.path.abspath("server/uploaded_games_extracted")
 
-    # 確保目錄存在
-    if not os.path.exists(UPLOAD_DIR): os.makedirs(UPLOAD_DIR)
-    if not os.path.exists(EXTRACT_DIR): os.makedirs(EXTRACT_DIR)
+class DeveloperService:
+    def __init__(self, db_manager, conn_manager):
+        self.db_manager = db_manager
+        self.conn_manager = conn_manager
+        if not os.path.exists(UPLOADED_GAMES_DIR):
+            os.makedirs(UPLOADED_GAMES_DIR)
+        if not os.path.exists(EXTRACTED_GAMES_DIR):
+            os.makedirs(EXTRACTED_GAMES_DIR)
 
-    save_path = os.path.join(UPLOAD_DIR, f"{game_name}.zip")
-    
-    print(f"Receiving game file for: {game_name}...")
-    try:
-        # 1. 接收檔案
-        recv_file(conn, save_path)
+    def handle_request(self, conn, data):
+        command = data.get('command')
         
-        # 2. [Fix 5] 立即解壓縮
-        extract_path = os.path.join(EXTRACT_DIR, game_name)
-        with zipfile.ZipFile(save_path, 'r') as zip_ref:
-            zip_ref.extractall(extract_path)
-        print(f"Game extracted to {extract_path}")
+        # 登入和註冊是特例，不需要預先驗證 username
+        if command == 'login':
+            self.login(conn, data)
+        elif command == 'register':
+            self.register(conn, data)
+        else:
+            # 其他指令需要先確認使用者已登入
+            username = self.conn_manager.get_username(conn)
+            if not username:
+                send_json(conn, {'status': 'fail', 'message': '未經授權的操作，請先登入'})
+                return
 
-        # 3. 更新資料庫
-        # 這裡簡化：假設 metadata 都在 request 裡，或者解壓後讀取 config
-        game_info = {
-            'game_name': game_name,
-            'version': request.get('version', '1.0.0'),
-            'description': request.get('description', 'No description'),
-            # 預設執行檔名，實際應從 game_config.json 讀取
-            'server_exe': 'server.py',
-            'client_exe': 'client.py',
-            'run_cmd': 'python'
-        }
-        add_game_metadata(game_info)
+            if command == 'upload_game':
+                self.upload_game(conn, data, username)
+            else:
+                send_json(conn, {'status': 'fail', 'message': f'未知的開發者指令: {command}'})
+
+    def login(self, conn, data):
+        username = data.get('username')
+        password = data.get('password')
+        user = self.db_manager.login_user(username, password, 'developer')
+        if user:
+            self.conn_manager.add_connection(conn, username)
+            send_json(conn, {'status': 'success', 'message': '開發者登入成功'})
+        else:
+            send_json(conn, {'status': 'fail', 'message': '帳號或密碼錯誤'})
+
+    def register(self, conn, data):
+        username = data.get('username')
+        password = data.get('password')
+        success = self.db_manager.register_user(username, password, 'developer')
+        if success:
+            send_json(conn, {'status': 'success', 'message': '開發者註冊成功'})
+        else:
+            send_json(conn, {'status': 'fail', 'message': '註冊失敗，帳號可能已存在'})
+
+    def upload_game(self, conn, data, developer_name):
+        game_name = data.get('game_name')
+        version = data.get('version')
         
-        return {'status': 'success', 'message': 'Upload and extraction complete'}
-    except Exception as e:
-        print(f"Upload error: {e}")
-        return {'status': 'error', 'message': str(e)}
+        if not game_name or not version:
+            send_json(conn, {'status': 'fail', 'message': '缺少遊戲名稱或版本資訊'})
+            return
+
+        zip_path = os.path.join(UPLOADED_GAMES_DIR, f"{game_name}.zip")
+        
+        try:
+            recv_file(conn, zip_path)
+            # 在此處可以加入解壓縮和驗證遊戲檔案的邏輯
+            
+            # 將遊戲資訊存入資料庫
+            self.db_manager.add_game(game_name, developer_name, f"server/uploaded_games/{game_name}", version)
+            
+            send_json(conn, {'status': 'success', 'message': f'遊戲 {game_name} 上傳成功'})
+        except Exception as e:
+            print(f"上傳遊戲失敗: {e}")
+            send_json(conn, {'status': 'fail', 'message': f'檔案接收或處理失敗: {e}'})

@@ -1,83 +1,88 @@
 # server/server_main.py
 import socket
 import threading
-import sys
+import json
 import os
+import sys
 
-# 確保可以 import common
-sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
+# 將專案根目錄添加到 sys.path
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
-# [Fix 1] 必須引入 send_file
-from common.protocol import recv_json, send_json, send_file
+from common.protocol import recv_json, send_json
 from common.ip_port_config import SERVER_IP, SERVER_PORT
-from server.developer_service import handle_developer_upload
-from server.lobby_service import handle_lobby_request
+from server.lobby_service import LobbyService
+from server.developer_service import DeveloperService
+from server.connection_manager import connection_manager
+from server.db_manager import DatabaseManager
 
-HOST = SERVER_IP
-PORT = SERVER_PORT
-UPLOAD_DIR = 'server/uploaded_games' # 定義上傳路徑常數
+class Server:
+    def __init__(self, host, port):
+        self.host = host
+        self.port = port
+        self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        
+        self.db_manager = DatabaseManager()
+        # 初始化服務，並傳入資料庫和連線管理器
+        self.lobby_service = LobbyService(self.db_manager, connection_manager)
+        self.developer_service = DeveloperService(self.db_manager, connection_manager)
 
-def client_handler(conn, addr):
-    print(f"Connected by {addr}")
-    try:
-        while True:
-            request = recv_json(conn)
-            if not request:
-                break
-            
-            command = request.get('command')
-            response = {'status': 'error', 'message': 'Unknown command'}
+    def start(self):
+        """啟動伺服器並開始監聽連線"""
+        self.sock.bind((self.host, self.port))
+        self.sock.listen(5)
+        print(f"伺服器啟動於 {self.host}:{self.port}")
 
-            # --- 路由邏輯 ---
-            if command == 'upload_game':
-                # 處理上傳 (接收檔案)
-                response = handle_developer_upload(conn, request)
-                send_json(conn, response)
+        try:
+            while True:
+                conn, addr = self.sock.accept()
+                print(f"新的連線來自: {addr}")
+                # 為每個客戶端建立一個新的執行緒來處理
+                thread = threading.Thread(target=self.handle_client, args=(conn,))
+                thread.daemon = True
+                thread.start()
+        except KeyboardInterrupt:
+            print("伺服器正在關閉...")
+        finally:
+            self.sock.close()
 
-            elif command == 'download_game':
-                # [Fix 2] 處理下載 (發送檔案)
-                # 1. 先詢問 Lobby Service 檔案是否存在
-                response = handle_lobby_request(conn, request)
-                send_json(conn, response)
+    def handle_client(self, conn):
+        """處理單一客戶端連線的所有請求"""
+        try:
+            while True:
+                data = recv_json(conn)
+                if not data:
+                    # 如果收到空資料，表示客戶端已斷開連線
+                    break
                 
-                # 2. 如果狀態是 ready_to_send，緊接著發送二進位檔案
-                if response['status'] == 'ready_to_send':
-                    game_name = request.get('game_name')
-                    file_path = os.path.join(UPLOAD_DIR, f"{game_name}.zip")
-                    print(f"Sending file {file_path} to {addr}...")
-                    send_file(conn, file_path)
-            
-            else:
-                # 其他一般指令 (List games, Login, Create Room...)
-                response = handle_lobby_request(conn, request)
-                send_json(conn, response)
+                command = data.get('command')
+                role = data.get('role')
 
-    except Exception as e:
-        print(f"Error handling client {addr}: {e}")
-        import traceback
-        traceback.print_exc()
-    finally:
-        conn.close()
+                # 登出是特殊指令，直接處理
+                if command == 'logout':
+                    connection_manager.remove_connection(conn)
+                    # 登出後不需要回傳，客戶端會自行處理介面切換
+                    continue
 
-def main():
-    # 確保必要的資料夾存在
-    if not os.path.exists(UPLOAD_DIR):
-        os.makedirs(UPLOAD_DIR)
+                # 根據角色將請求分派給對應的服務
+                if role == 'player':
+                    self.lobby_service.handle_request(conn, data)
+                elif role == 'developer':
+                    self.developer_service.handle_request(conn, data)
+                else:
+                    # 如果請求沒有指定角色（除了登出），視為無效請求
+                    send_json(conn, {'status': 'fail', 'message': '無效的請求，缺少角色資訊'})
 
-    # [Fix 3] 初始化資料庫 (避免第一次執行時 table 不存在)
-    from server.db_manager import init_db
-    init_db()
-
-    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1) # 允許快速重啟 Server
-    s.bind((HOST, PORT))
-    s.listen()
-    print(f"Server listening on {HOST}:{PORT}")
-
-    while True:
-        conn, addr = s.accept()
-        t = threading.Thread(target=client_handler, args=(conn, addr))
-        t.start()
+        except (ConnectionResetError, json.JSONDecodeError, TypeError, OSError) as e:
+            # 處理客戶端突然中斷連線等網路錯誤
+            print(f"客戶端連線錯誤: {e}")
+        finally:
+            # 無論如何，最終都要從連線管理器中移除並關閉連線
+            peer_name = conn.getpeername() if conn.fileno() != -1 else "未知連線"
+            print(f"連線 {peer_name} 已關閉")
+            connection_manager.remove_connection(conn)
+            conn.close()
 
 if __name__ == '__main__':
-    main()
+    server = Server(SERVER_IP, SERVER_PORT)
+    server.start()

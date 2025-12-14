@@ -1,151 +1,86 @@
-import socket
-import subprocess
 import os
-import random
 import sys
-import threading  # [Fix] 引入 threading
-from server.db_manager import get_all_games, login_user, register_user
+from common.protocol import send_json
 
-# 狀態儲存
-ROOMS = {} 
-lobby_lock = threading.Lock()  # [Fix] 建立鎖，保護 ROOMS
+sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 
-UPLOAD_DIR = 'server/uploaded_games'
-EXTRACT_DIR = 'server/uploaded_games_extracted'
+class LobbyService:
+    def __init__(self, db_manager, conn_manager):
+        self.db_manager = db_manager
+        self.conn_manager = conn_manager
+        self.game_rooms = {} # room_name: {host: str, players: [str], game: str}
 
-def find_free_port():
-    """尋找一個閒置的 Port"""
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-        s.bind(('', 0))
-        return s.getsockname()[1]
+    def handle_request(self, conn, data):
+        command = data.get('command')
 
-def handle_lobby_request(conn, request):
-    cmd = request.get('command')
-    user = request.get('username')
-    
-    # --- 帳號相關 (DB Manager 內部已有 connection 隔離，無需額外鎖) ---
-    if cmd == 'login':
-        role = request.get('role')
-        db_role = login_user(user, request.get('password'), role)
-        if db_role:
-            return {'status': 'success', 'role': db_role}
-        return {'status': 'fail', 'message': 'Invalid credentials'}
-    
-    elif cmd == 'register':
-        if register_user(user, request.get('password')):
-            return {'status': 'success'}
-        return {'status': 'fail', 'message': 'User exists'}
+        # 登入和註冊是特例
+        if command == 'login':
+            self.login(conn, data)
+            return
+        elif command == 'register':
+            self.register(conn, data)
+            return
 
-    # --- 遊戲列表與下載 ---
-    elif cmd == 'get_game_list':
-        # 讀取 DB，唯讀操作
-        return {'status': 'success', 'games': get_all_games()}
-    
-    elif cmd == 'download_game':
-        game_name = request.get('game_name')
-        file_path = os.path.join(UPLOAD_DIR, f"{game_name}.zip")
-        if os.path.exists(file_path):
-            return {'status': 'ready_to_send', 'file_size': os.path.getsize(file_path)}
+        # 其他指令需要先確認使用者已登入
+        username = self.conn_manager.get_username(conn)
+        if not username:
+            send_json(conn, {'status': 'fail', 'message': '未經授權的操作，請先登入'})
+            return
+
+        if command == 'get_online_players':
+            self.get_online_players(conn)
+        elif command == 'get_game_rooms':
+            self.get_game_rooms(conn)
+        elif command == 'create_room':
+            self.create_room(conn, data, username)
+        # 可以繼續添加其他指令...
         else:
-            return {'status': 'error', 'message': 'Game file not found'}
+            send_json(conn, {'status': 'fail', 'message': f'未知的大廳指令: {command}'})
 
-    # --- 房間邏輯 (必須加鎖！) ---
-    elif cmd == 'create_room':
-        game_name = request.get('game_name')
-        room_id = str(random.randint(1000, 9999))
-        
-        with lobby_lock:  # [Lock] 寫入 ROOMS
-            # 檢查 ID 是否重複 (極低機率，但為了嚴謹)
-            while room_id in ROOMS:
-                room_id = str(random.randint(1000, 9999))
-                
-            ROOMS[room_id] = {
-                'game_name': game_name,
-                'players': [user],
-                'status': 'WAITING',
-                'game_port': None
-            }
-        
-        print(f"Room {room_id} created for game {game_name} by {user}")
-        return {'status': 'success', 'room_id': room_id}
+    def login(self, conn, data):
+        username = data.get('username')
+        password = data.get('password')
+        user = self.db_manager.login_user(username, password, 'player')
+        if user:
+            self.conn_manager.add_connection(conn, username)
+            send_json(conn, {'status': 'success', 'message': '玩家登入成功'})
+        else:
+            send_json(conn, {'status': 'fail', 'message': '帳號或密碼錯誤'})
 
-    elif cmd == 'list_rooms':
-        with lobby_lock:  # [Lock] 讀取 ROOMS
-            room_list = []
-            for rid, data in ROOMS.items():
-                status = data['status']
-                p_count = len(data['players'])
-                room_list.append(f"Room {rid}: {data['game_name']} ({p_count} players) [{status}]")
-        return {'status': 'success', 'rooms': room_list}
+    def register(self, conn, data):
+        username = data.get('username')
+        password = data.get('password')
+        success = self.db_manager.register_user(username, password, 'player')
+        if success:
+            send_json(conn, {'status': 'success', 'message': '玩家註冊成功'})
+        else:
+            send_json(conn, {'status': 'fail', 'message': '註冊失敗，帳號可能已存在'})
 
-    elif cmd == 'join_room':
-        room_id = request.get('room_id')
-        
-        with lobby_lock:  # [Lock] 修改 ROOMS
-            if room_id in ROOMS:
-                room = ROOMS[room_id]
-                if room['status'] != 'WAITING':
-                    return {'status': 'error', 'message': 'Game already started'}
-                
-                if user not in room['players']:
-                    room['players'].append(user)
-                return {'status': 'success', 'game_name': room['game_name']}
-            else:
-                return {'status': 'error', 'message': 'Room not found'}
+    def get_online_players(self, conn):
+        players = self.conn_manager.get_all_usernames()
+        send_json(conn, {'status': 'success', 'players': players})
 
-    elif cmd == 'start_game':
-        room_id = request.get('room_id')
-        
-        # 1. 先在鎖內檢查房間狀態並分配 Port (避免重複啟動)
-        target_room = None
-        with lobby_lock:
-            if room_id in ROOMS:
-                room = ROOMS[room_id]
-                if room['status'] == 'WAITING':
-                    # 標記為啟動中，避免其他 thread 同時啟動
-                    room['status'] = 'STARTING' 
-                    target_room = room
-                elif room['status'] == 'PLAYING':
-                     # 如果已經啟動，直接回傳既有的 Port
-                     return {
-                        'status': 'game_started', 
-                        'server_ip': '127.0.0.1',
-                        'server_port': room['game_port']
-                    }
-        
-        if not target_room:
-            return {'status': 'error', 'message': 'Room not found or already started'}
+    def get_game_rooms(self, conn):
+        # 簡化回傳的房間資訊
+        room_info = {name: {'host': details['host'], 'game': details['game'], 'player_count': len(details['players'])} 
+                     for name, details in self.game_rooms.items()}
+        send_json(conn, {'status': 'success', 'rooms': room_info})
 
-        # 2. 啟動 subprocess (比較耗時，可以放在鎖外面，或者在鎖內做完簡單操作)
-        # 這裡為了安全與簡化，我們先分配 Port
-        game_port = find_free_port()
+    def create_room(self, conn, data, username):
+        room_name = data.get('room_name')
+        game_name = data.get('game_name')
+        if not room_name or not game_name:
+            send_json(conn, {'status': 'fail', 'message': '缺少房間名稱或遊戲名稱'})
+            return
         
-        game_dir = os.path.join(EXTRACT_DIR, target_room['game_name'])
-        script_path = os.path.join(game_dir, 'server.py') # 假設固定為 server.py
-        
-        if not os.path.exists(script_path):
-            with lobby_lock: target_room['status'] = 'WAITING' # 失敗則還原
-            return {'status': 'error', 'message': 'Server script not found'}
+        if room_name in self.game_rooms:
+            send_json(conn, {'status': 'fail', 'message': '房間名稱已被使用'})
+            return
 
-        print(f"[*] Starting Game Server: {script_path} on port {game_port}")
-        
-        try:
-            # 啟動遊戲 Server
-            subprocess.Popen([sys.executable, script_path, str(game_port)], cwd=game_dir)
-            
-            # 更新房間狀態
-            with lobby_lock:
-                target_room['game_port'] = game_port
-                target_room['status'] = 'PLAYING'
-            
-            return {
-                'status': 'game_started', 
-                'server_ip': '127.0.0.1', 
-                'server_port': game_port
-            }
-        except Exception as e:
-            with lobby_lock: target_room['status'] = 'WAITING' # 失敗還原
-            print(f"Failed to start game process: {e}")
-            return {'status': 'error', 'message': str(e)}
-
-    return {'status': 'error', 'message': 'Unknown command'}
+        self.game_rooms[room_name] = {
+            'host': username,
+            'players': [username],
+            'game': game_name
+        }
+        send_json(conn, {'status': 'success', 'message': f'房間 {room_name} 建立成功'})
+        print(f"玩家 {username} 建立了房間 {room_name} 來玩 {game_name}")

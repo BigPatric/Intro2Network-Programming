@@ -1,9 +1,7 @@
-# developer/dev_client.py
 import socket
-import sys
 import os
-import shutil
 import zipfile
+import sys
 
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 from common.protocol import send_json, recv_json, send_file
@@ -11,104 +9,82 @@ from common.ip_port_config import SERVER_IP, SERVER_PORT
 
 class DeveloperClient:
     def __init__(self):
-        self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.sock = None
         self.username = None
 
     def connect(self):
+        if self.sock:
+            try:
+                self.sock.close()
+            except Exception:
+                pass
+        self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         try:
             self.sock.connect((SERVER_IP, SERVER_PORT))
             return True
-        except Exception as e:
-            print(f"Cannot connect to server: {e}")
+        except Exception:
             return False
 
-    def login(self):
-        while True:
-            print("=== Developer 登入/註冊 ===")
-            print("1. Login")
-            print("2. Register")
-            print("3. Exit")
-            op = input("Select: ")
-            if op in ['1', '2']:
-                u = input("Username: ")
-                p = input("Password: ")
-                if u and p:
-                    cmd = 'login' if op == '1' else 'register'
-                    send_json(self.sock, {'command': cmd, 'username': u, 'password': p, 'role': 'developer'})
-                    res = recv_json(self.sock)
-                    if res and res.get('status') == 'success':
-                        self.username = u
-                        print(f"Welcome, {u}!")
-                        return True
-                    else:
-                        print(f"Failed: {res.get('message') if res else 'No response'}")
-                        continue
-            elif op == '3':
-                return False
-            else:
-                print("Invalid input, try again.")
+    def ensure_connection(self):
+        try:
+            self.sock.sendall(b'')
+            return True
+        except Exception:
+            return self.connect()
 
-    def zip_game(self, game_path, output_filename):
-        """將遊戲資料夾壓縮成 zip"""
-        with zipfile.ZipFile(output_filename, 'w', zipfile.ZIP_DEFLATED) as zipf:
-            for root, dirs, files in os.walk(game_path):
-                for file in files:
-                    file_path = os.path.join(root, file)
-                    # 保留相對路徑
-                    arcname = os.path.relpath(file_path, os.path.dirname(game_path))
-                    zipf.write(file_path, arcname)
-
-    def upload_game(self):
-        game_name = input("Enter game name (folder name in games/): ")
-        game_path = os.path.join('developer/games', game_name)
-        
-        if not os.path.exists(game_path):
-            print("Game folder not found!")
-            return
-
-        # 1. 壓縮遊戲
-        zip_name = f"{game_name}.zip"
-        self.zip_game(game_path, zip_name)
-        
-        # 2. 發送上傳請求
-        req = {
-            'command': 'upload_game',
-            'game_name': game_name,
-            'version': '1.0.0' # 可以從 config 讀取
-        }
-        send_json(self.sock, req)
-        
-        # 3. 發送檔案
-        print("Uploading file...")
-        send_file(self.sock, zip_name)
-        
-        # 4. 接收結果
+    def login(self, username, password):
+        if not self.ensure_connection():
+            return {'status': 'fail', 'message': '連線失敗'}
+        send_json(self.sock, {'command': 'login', 'username': username, 'password': password, 'role': 'developer'})
         res = recv_json(self.sock)
-        print("Server response:", res)
-        
-        # 清理暫存 zip
-        os.remove(zip_name)
+        if res and res.get('status') == 'success':
+            self.username = username
+        return res
 
-    def run(self):
-        if not self.connect():
-            print("Goodbye!")
-            return
-        if not self.login():
-            print("Goodbye!")
-            return
-        while True:
-            print("\n=== Developer Menu ===")
-            print("1. Upload Game")
-            print("2. Exit")
-            choice = input("Select: ")
-            if choice == '1':
-                self.upload_game()
-            elif choice == '2':
-                print("Exiting...")
-                break
+    def register(self, username, password):
+        if not self.ensure_connection():
+            return {'status': 'fail', 'message': '連線失敗'}
+        send_json(self.sock, {'command': 'register', 'username': username, 'password': password, 'role': 'developer'})
+        res = recv_json(self.sock)
+        return res
 
-        self.sock.close()
+    def zip_game(self, folder):
+        game_name = os.path.basename(folder)
+        zip_name = f"{game_name}.zip"
+        with zipfile.ZipFile(zip_name, 'w', zipfile.ZIP_DEFLATED) as zipf:
+            for root_dir, _, files in os.walk(folder):
+                for file in files:
+                    file_path = os.path.join(root_dir, file)
+                    arcname = os.path.relpath(file_path, folder)
+                    zipf.write(file_path, arcname)
+        return zip_name
 
-if __name__ == '__main__':
-    client = DeveloperClient()
-    client.run()
+    def upload_game(self, folder):
+        if not self.ensure_connection():
+            return {'status': 'fail', 'message': '連線失敗'}
+        if not folder or not os.path.isdir(folder):
+            return {'status': 'fail', 'message': '請選擇正確的遊戲資料夾'}
+        game_name = os.path.basename(folder)
+        zip_name = self.zip_game(folder)
+        try:
+            send_json(self.sock, {'command': 'upload_game', 'game_name': game_name, 'version': '1.0.0'})
+            send_file(self.sock, zip_name)
+            res = recv_json(self.sock)
+        finally:
+            os.remove(zip_name)
+        return res
+
+    def logout(self):
+        if self.username and self.ensure_connection():
+            try:
+                send_json(self.sock, {'command': 'logout'})
+            except Exception:
+                pass
+        self.username = None
+
+    def close(self):
+        if self.sock:
+            try:
+                self.sock.close()
+            except Exception:
+                pass

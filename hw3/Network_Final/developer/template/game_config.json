@@ -1,9 +1,8 @@
 {
-    "game_name": "Template Game",
-    "version": "1.0.0",
-    "run_command": "python",
-    "server_exe_file": "server.py",
-    "client_exe_file": "client.py",
-    "min_players": 2,
-    "max_players": 4
+  "game_name": "echo_game",
+  "version": "1.0.0",
+  "description": "A simple echo game for demo purpose.",
+  "run_cmd": "python",
+  "server_exe_file": "server.py",
+  "client_exe_file": "client.py"
 }
