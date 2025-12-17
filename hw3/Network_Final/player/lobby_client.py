@@ -1,6 +1,7 @@
 import socket
 import json
 import os
+import threading
 import sys
 import subprocess
 import zipfile
@@ -16,7 +17,10 @@ class LobbyClient:
     def __init__(self):
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.username = None
-
+        self.listener_thread = threading.Thread(target=self.listen_to_server, daemon=True)
+        self.listener_thread.start()
+        self.current_room_id = None
+        
     def connect(self):
         try:
             self.sock.connect((SERVER_IP, SERVER_PORT))
@@ -74,6 +78,7 @@ class LobbyClient:
         send_json(self.sock, {'command': 'create_room', 'game_name': game_name , 'role': 'player'})
         res = recv_json(self.sock)
         if res and res.get('status') == 'success':
+            self.current_room_id = res.get('room_id')
             return True, res.get('room_id')
         else:
             return False, res.get('message') if res else '沒有回應'
@@ -90,14 +95,37 @@ class LobbyClient:
         res = recv_json(self.sock)
         if res and res.get('status') == 'success':
             room_info = res.get('room_info', {})
+            self.current_room_id = room_id
             return True, room_info
         else:
             return False, res.get('message') if res else '沒有回應'
-
+        
+    def listen_to_server(self):
+        print("[Listener] 監聽伺服器訊息中...")
+        while True:
+            try:
+                res = recv_json(self.sock)
+                print(f"[Listener] 收到伺服器訊息: {res}")
+                if res is None:
+                    break
+                if res.get('status') == 'start_game':
+                    print("[Listener] 收到 start_game 指令，準備啟動遊戲客戶端...")
+                    game_name = res.get('game_name')
+                    ip = res.get('ip')
+                    port = res.get('port')
+                    self.launch_game_client(game_name, ip, port)
+            except Exception as e:
+                print(f"[Listener] Exception: {e}")
+                break
+    
+    def start_game(self, room_id):
+        send_json(self.sock, {'command': 'start_game', 'room_id': room_id, 'role': 'player'})
+   
     def launch_game_client(self, game_name, ip, port):
         game_client_path = os.path.join(DOWNLOAD_BASE, self.username, game_name, 'client.py')
+        print(f"[Lobby Client] 嘗試啟動遊戲客戶端: {game_client_path} with IP: {ip}, Port: {port}")
         if os.path.exists(game_client_path):
-            subprocess.Popen(['python3', game_client_path, '--ip', ip, '--port', str(port)])
+            subprocess.Popen(['python3', game_client_path, ip, str(port)])
         else:
             print(f"找不到遊戲客戶端: {game_client_path}")
 
@@ -114,3 +142,10 @@ class LobbyClient:
 
     def close(self):
         self.sock.close()
+        try:
+            self.sock.shutdown(socket.SHUT_RDWR)
+        except Exception:
+            pass
+        self.sock.close()
+        if self.listener_thread.is_alive():
+            self.listener_thread.join(timeout=1)

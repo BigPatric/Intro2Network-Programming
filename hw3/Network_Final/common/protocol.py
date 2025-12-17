@@ -30,7 +30,7 @@ def recv_json(sock):
         return None
 
 def send_file(sock, file_path):
-    """傳送二進位檔案 (用於遊戲上傳/下載)"""
+    """傳送二進位檔案"""
     with open(file_path, 'rb') as f:
         file_data = f.read()
     # 先傳送檔案大小

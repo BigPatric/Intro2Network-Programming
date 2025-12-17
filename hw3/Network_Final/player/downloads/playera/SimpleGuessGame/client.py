@@ -1,7 +1,12 @@
 import socket
+import sys
 
-HOST = input("請輸入遊戲伺服器 IP（預設 127.0.0.1）：") or "127.0.0.1"
-PORT = int(input("請輸入遊戲伺服器 PORT（預設 9009）：") or 9009)
+if len(sys.argv) >= 3:
+    HOST = sys.argv[1]
+    PORT = int(sys.argv[2])
+else:
+    HOST = "127.0.0.1"
+    PORT = 9009
 
 with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
     s.connect((HOST, PORT))

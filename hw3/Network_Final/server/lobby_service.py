@@ -1,10 +1,13 @@
 import os
 import sys
 from common.protocol import send_json, send_file
+from common.ip_port_config import SERVER_IP, SERVER_PORT
 import time
 import string
 import random
 import json
+import subprocess
+import socket
 
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 UPLOADED_GAMES_DIR = os.path.join(os.path.dirname(__file__), 'uploaded_games')
@@ -14,6 +17,7 @@ class LobbyService:
         self.db_manager = db_manager
         self.conn_manager = conn_manager
         self.game_rooms = {} # room_name: {host: str, players: [str], game: str}
+        self.current_room_id = None
 
     def handle_request(self, conn, data):
         command = data.get('command')
@@ -54,6 +58,8 @@ class LobbyService:
             self.get_game_list(conn)
         elif command == 'download_game':
             self.download_game(conn, data)
+        elif command == 'start_game':
+            self.start_game(conn, data, username)
         else:
             send_json(conn, {'status': 'fail', 'message': f'未知的大廳指令: {command}'})
 
@@ -159,3 +165,35 @@ class LobbyService:
             return
         send_json(conn, {'status': 'ready'})
         send_file(conn, client_py_path)
+    def start_game(self, conn, data, username):
+        room_id = data.get('room_id')
+        if not room_id or room_id not in self.game_rooms:
+            send_json(conn, {'status': 'fail', 'message': '房間不存在'})
+            return
+        room = self.game_rooms[room_id]
+        if username != room['host']:
+            send_json(conn, {'status': 'fail', 'message': '只有房主可以啟動遊戲'})
+            return
+        # 動態分配一個可用 port
+        s = socket.socket()
+        s.bind(('', 0))
+        port = s.getsockname()[1]
+        s.close()
+
+        # 啟動遊戲伺服器進程
+        game_dir = os.path.abspath(f"server/uploaded_games_extracted/{room['game']}")
+        server_py = os.path.join(game_dir, "game_server.py")
+        subprocess.Popen(['python3', server_py, str(port)], cwd=game_dir)
+
+        # 通知所有房內玩家
+        for player in room['players']:
+            sock = self.conn_manager.user_to_sock.get(player)
+            if sock:
+                send_json(sock, {
+                    'status': 'start_game',
+                    'game_name': room['game'],
+                    'ip': SERVER_IP,
+                    'port': port
+                })
+            print(f"Notified player {player} to start game {room['game']} at {SERVER_IP}:{port}")
+        send_json(conn, {'status': 'success', 'message': '遊戲已啟動'})

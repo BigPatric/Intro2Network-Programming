@@ -2,6 +2,7 @@ import threading
 
 class ConnectionManager:
     def __init__(self):
+        print("ConnectionManager 建立")
         self.connections = {}  # sock: username
         self.user_to_sock = {} # username: sock
         self._lock = threading.Lock()

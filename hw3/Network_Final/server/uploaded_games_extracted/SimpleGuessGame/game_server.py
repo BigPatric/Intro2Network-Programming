@@ -1,13 +1,14 @@
 import socket
 import threading
 import random
+import sys
 
 HOST = '0.0.0.0'
-PORT = 9009
+PORT = int(sys.argv[1]) if len(sys.argv) > 1 else 9009
 
 def handle_client(conn, addr):
     answer = random.randint(1, 10)
-    conn.sendall(b"歡迎來到猜數字遊戲！請猜 1~10 的數字：\n")
+    conn.sendall("歡迎來到猜數字遊戲！請猜 1~10 的數字：\n".encode('utf-8'))
     while True:
         data = conn.recv(1024)
         if not data:
@@ -15,14 +16,14 @@ def handle_client(conn, addr):
         try:
             guess = int(data.decode().strip())
             if guess == answer:
-                conn.sendall(b"恭喜答對！\n")
+                conn.sendall("恭喜答對！\n".encode('utf-8'))
                 break
             elif guess < answer:
-                conn.sendall(b"太小了，再試一次：\n")
+                conn.sendall("太小了，再試一次：\n".encode('utf-8'))
             else:
-                conn.sendall(b"太大了，再試一次：\n")
+                conn.sendall("太大了，再試一次：\n".encode('utf-8'))
         except:
-            conn.sendall(b"請輸入數字：\n")
+            conn.sendall("請輸入數字：\n".encode('utf-8'))
     conn.close()
 
 def main():

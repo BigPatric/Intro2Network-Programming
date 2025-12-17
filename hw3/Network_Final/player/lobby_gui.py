@@ -100,8 +100,9 @@ class LobbyGUI:
             self.hide_all_frames()
             self.lobby_frame.pack()
             self.refresh_games()
+            
         else:
-            messagebox.showerror("登入失敗", "帳號或密碼錯誤")
+            messagebox.showerror("登入失敗", str(msg))
 
     def register(self):
         username = self.reg_username_entry.get()
@@ -151,6 +152,7 @@ class LobbyGUI:
                 room_id = rooms[sel[0]]['room_id']
                 game_name = rooms[sel[0]]['game']
                 # check if downloaded
+                ## later add the version check
                 user_dir = os.path.join('player/downloads', self.client.username, game_name)
                 if not os.path.exists(user_dir):
                     res = messagebox.askyesno("尚未下載", f"你尚未下載 {game_name}，是否現在下載？")
@@ -163,11 +165,11 @@ class LobbyGUI:
                         return
                 success, msg = self.client.join_room(room_id)
                 if success:
-                    messagebox.showinfo("加入房間", msg)
+                    messagebox.showinfo("加入房間", "加入成功！" + str(msg))
                     self.hide_all_frames()
                     self.room_frame.pack()
                 else:
-                    messagebox.showerror("加入失敗", msg)
+                    messagebox.showerror("加入失敗", "加入失敗：" + str(msg))
             tk.Button(top, text="加入房間", command=join_selected).pack()
         tk.Button(top, text="返回", command=top.destroy).pack(pady=5)
 
@@ -269,12 +271,13 @@ class LobbyGUI:
         self.password_entry.delete(0, 'end')
         self.client.username = None
         self.welcome_label.config(text="歡迎來到遊戲大廳")
-
-    def wait_for_game_start(self):
-        print("waiting for game to start...")
-
+        
     def start_game(self):
         print("starting game...")
+        if hasattr(self.client, 'current_room_id'):
+            self.client.start_game(self.client.current_room_id)
+        else:
+            messagebox.showerror("error", "無法取得房間ID")   
 
     def choose_downloaded_game(self):
         user_dir = os.path.join('player/downloads', self.client.username)
