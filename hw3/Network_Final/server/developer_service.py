@@ -1,5 +1,6 @@
 import os
 import sys
+import zipfile
 from common.protocol import send_json, recv_file
 
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
@@ -57,22 +58,20 @@ class DeveloperService:
 
     def upload_game(self, conn, data, developer_name):
         game_name = data.get('game_name')
-        version = data.get('version')
-        
-        if not game_name or not version:
-            send_json(conn, {'status': 'fail', 'message': '缺少遊戲名稱或版本資訊'})
+        if not game_name:
+            send_json(conn, {'status': 'fail', 'message': '缺少遊戲名稱'})
             return
-
+        os.makedirs(UPLOADED_GAMES_DIR, exist_ok=True)
+        os.makedirs(EXTRACTED_GAMES_DIR, exist_ok=True)
         zip_path = os.path.join(UPLOADED_GAMES_DIR, f"{game_name}.zip")
-        
-        try:
-            recv_file(conn, zip_path)
-            # 在此處可以加入解壓縮和驗證遊戲檔案的邏輯
-            
-            # 將遊戲資訊存入資料庫
-            self.db_manager.add_game(game_name, developer_name, f"server/uploaded_games/{game_name}", version)
-            
-            send_json(conn, {'status': 'success', 'message': f'遊戲 {game_name} 上傳成功'})
-        except Exception as e:
-            print(f"上傳遊戲失敗: {e}")
-            send_json(conn, {'status': 'fail', 'message': f'檔案接收或處理失敗: {e}'})
+        recv_file(conn, zip_path)
+        # 自動解壓縮到 uploaded_games_extracted/game_name/
+        extract_path = os.path.join(EXTRACTED_GAMES_DIR, game_name)
+        if os.path.exists(extract_path):
+            # 若已存在則先刪除
+            import shutil
+            shutil.rmtree(extract_path)
+        os.makedirs(extract_path, exist_ok=True)
+        with zipfile.ZipFile(zip_path, 'r') as zip_ref:
+            zip_ref.extractall(extract_path)
+        send_json(conn, {'status': 'success', 'message': '遊戲上傳並解壓縮完成'})

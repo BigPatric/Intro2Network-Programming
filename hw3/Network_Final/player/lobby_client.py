@@ -3,6 +3,7 @@ import json
 import os
 import sys
 import subprocess
+import zipfile
 
 # 確保可以從上層目錄 import
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
@@ -72,7 +73,10 @@ class LobbyClient:
     def create_room(self, game_name):
         send_json(self.sock, {'command': 'create_room', 'game_name': game_name , 'role': 'player'})
         res = recv_json(self.sock)
-        return res and res.get('status') == 'success'
+        if res and res.get('status') == 'success':
+            return True, res.get('room_id')
+        else:
+            return False, res.get('message') if res else '沒有回應'
 
     def list_rooms(self):
         send_json(self.sock, {'command': 'list_rooms', 'role': 'player'})
@@ -81,12 +85,32 @@ class LobbyClient:
             return res.get('rooms', [])
         return []
 
+    def join_room(self, room_id):
+        send_json(self.sock, {'command': 'join_room', 'room_id': room_id, 'role': 'player'})
+        res = recv_json(self.sock)
+        if res and res.get('status') == 'success':
+            room_info = res.get('room_info', {})
+            return True, room_info
+        else:
+            return False, res.get('message') if res else '沒有回應'
+
     def launch_game_client(self, game_name, ip, port):
         game_client_path = os.path.join(DOWNLOAD_BASE, self.username, game_name, 'client.py')
         if os.path.exists(game_client_path):
             subprocess.Popen(['python3', game_client_path, '--ip', ip, '--port', str(port)])
         else:
             print(f"找不到遊戲客戶端: {game_client_path}")
+
+    def download_game(self, game_name):
+        send_json(self.sock, {'command': 'download_game', 'game_name': game_name, 'role': 'player'})
+        res = recv_json(self.sock)
+        if res and res.get('status') == 'ready':
+            user_dir = os.path.join(DOWNLOAD_BASE, self.username, game_name)
+            os.makedirs(user_dir, exist_ok=True)
+            client_py_path = os.path.join(user_dir, "client.py")
+            recv_file(self.sock, client_py_path)
+            return True
+        return False
 
     def close(self):
         self.sock.close()

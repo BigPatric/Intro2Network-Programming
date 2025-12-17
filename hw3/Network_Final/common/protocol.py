@@ -50,5 +50,5 @@ def recv_file(sock, save_path):
             chunk = sock.recv(min(4096, file_size - received))
             if not chunk: break
             f.write(chunk)
-            received += chunk.len
+            received += len(chunk)
     return True

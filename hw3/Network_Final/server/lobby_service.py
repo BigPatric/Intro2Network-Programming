@@ -1,9 +1,13 @@
 import os
 import sys
-from common.protocol import send_json
+from common.protocol import send_json, send_file
 import time
+import string
+import random
+import json
 
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
+UPLOADED_GAMES_DIR = os.path.join(os.path.dirname(__file__), 'uploaded_games')
 
 class LobbyService:
     def __init__(self, db_manager, conn_manager):
@@ -27,7 +31,6 @@ class LobbyService:
         if not username:
             send_json(conn, {'status': 'fail', 'message': '未經授權的操作，請先登入'})
             return
-
         if command == 'get_online_players':
             self.get_online_players(conn)
         elif command == 'get_game_rooms':
@@ -43,6 +46,14 @@ class LobbyService:
                 except Exception as e:
                     print(f"[DEBUG] remove_online_user on logout error: {e}")
                     # 登出後不需要回傳，客戶端會自行處理介面切換
+        elif command == 'list_rooms':
+            self.list_rooms(conn)
+        elif command == 'join_room':
+            self.join_room(conn, data, username)
+        elif command == 'get_game_list':
+            self.get_game_list(conn)
+        elif command == 'download_game':
+            self.download_game(conn, data)
         else:
             send_json(conn, {'status': 'fail', 'message': f'未知的大廳指令: {command}'})
 
@@ -79,28 +90,72 @@ class LobbyService:
             players = []
         send_json(conn, {'status': 'success', 'players': players})
         print("sent all online players")
-
-    def get_game_rooms(self, conn):
-        # 簡化回傳的房間資訊
-        room_info = {name: {'host': details['host'], 'game': details['game'], 'player_count': len(details['players'])} 
-                     for name, details in self.game_rooms.items()}
-        send_json(conn, {'status': 'success', 'rooms': room_info})
-
-    def create_room(self, conn, data, username):
-        room_name = data.get('room_name')
-        game_name = data.get('game_name')
-        if not room_name or not game_name:
-            send_json(conn, {'status': 'fail', 'message': '缺少房間名稱或遊戲名稱'})
-            return
         
-        if room_name in self.game_rooms:
-            send_json(conn, {'status': 'fail', 'message': '房間名稱已被使用'})
-            return
-
-        self.game_rooms[room_name] = {
+    def create_room(self, conn, data, username):
+        game_name = data.get('game_name')
+        room_id = ''.join(random.choices(string.ascii_uppercase + string.digits, k=6))
+        while room_id in self.game_rooms:
+            room_id = ''.join(random.choices(string.ascii_uppercase + string.digits, k=6))
+        self.game_rooms[room_id] = {
             'host': username,
             'players': [username],
             'game': game_name
         }
-        send_json(conn, {'status': 'success', 'message': f'房間 {room_name} 建立成功'})
-        print(f"玩家 {username} 建立了房間 {room_name} 來玩 {game_name}")
+        send_json(conn, {'status': 'success', 'room_id': room_id, 'message': f'房間 {room_id} 建立成功'})
+        
+    def list_rooms(self, conn):
+        rooms = []
+        for room_id, details in self.game_rooms.items():
+            rooms.append({
+                'room_id': room_id,
+                'host': details['host'],
+                'game': details['game'],
+                'player_count': len(details['players'])
+            })
+        send_json(conn, {'status': 'success', 'rooms': rooms})
+    
+    def join_room(self, conn, data, username):
+        room_id = data.get('room_id')
+        if not room_id or room_id not in self.game_rooms:
+            send_json(conn, {'status': 'fail', 'message': '房間不存在'})
+            return
+        if username in self.game_rooms[room_id]['players']:
+            send_json(conn, {'status': 'fail', 'message': '你已在房間內'})
+            return
+        self.game_rooms[room_id]['players'].append(username)
+        send_json(conn, {'status': 'success', 'message': f'已加入房間 {room_id}'})
+        
+    def get_game_list(self, conn):
+        try:
+            games = []
+            extracted_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), 'uploaded_games_extracted'))
+            for game_name in os.listdir(extracted_dir):
+                game_dir = os.path.join(extracted_dir, game_name)
+                if not os.path.isdir(game_dir):
+                    continue
+                # read config.json
+                config_path = os.path.join(game_dir, 'config.json')
+                if os.path.exists(config_path):
+                    with open(config_path, 'r', encoding='utf-8') as f:
+                        info = json.load(f)
+                    # 補充必要欄位
+                    info.setdefault('game_name', game_name)
+                    info.setdefault('maker', '')
+                    info.setdefault('version', '')
+                    info.setdefault('description', '')
+                    games.append(info)
+                else:
+                    # 沒有 config 則只顯示名稱
+                    games.append({"game_name": game_name, "maker": "", "version": "", "description": ""})
+            send_json(conn, {'status': 'success', 'games': games})
+        except Exception as e:
+            print(f"無法取得遊戲列表: {e}")
+            send_json(conn, {'status': 'fail', 'message': '無法取得遊戲列表'})
+    def download_game(self, conn, data):
+        game_name = data.get('game_name')
+        client_py_path = os.path.join("server/uploaded_games_extracted", game_name, "client.py")
+        if not os.path.exists(client_py_path):
+            send_json(conn, {'status': 'fail', 'message': '遊戲檔案不存在'})
+            return
+        send_json(conn, {'status': 'ready'})
+        send_file(conn, client_py_path)

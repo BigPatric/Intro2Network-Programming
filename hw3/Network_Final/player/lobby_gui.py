@@ -1,6 +1,7 @@
 import tkinter as tk
 from tkinter import messagebox, simpledialog
 from lobby_client import LobbyClient
+import os
 
 class LobbyGUI:
     def __init__(self, root):
@@ -63,7 +64,7 @@ class LobbyGUI:
         self.games_listbox.pack()
         tk.Button(self.lobby_frame, text="顯示上線玩家", command=self.show_online_players).pack()
         tk.Button(self.lobby_frame, text="顯示遊戲房間", command=self.show_game_rooms).pack()     
-        tk.Button(self.lobby_frame, text="瀏覽遊戲商城", command=self.refresh_games).pack()
+        tk.Button(self.lobby_frame, text="刷新遊戲商城", command=self.refresh_games).pack()
         tk.Button(self.lobby_frame, text="我的遊戲", command=self.show_my_games).pack()
         tk.Button(self.lobby_frame, text="建立房間", command=self.create_room).pack()
         tk.Button(self.lobby_frame, text="登出", command=self.logout).pack()
@@ -138,22 +139,97 @@ class LobbyGUI:
             room_listbox = tk.Listbox(top, width=50)
             room_listbox.pack()
             for room in rooms:
-                room_listbox.insert(tk.END, room)
+                room_listbox.insert(
+                    tk.END,
+                    f"{room['room_id']} | {room['game']} | Host: {room['host']} | Players: {', '.join(room['players'])}"
+                )
+            def join_selected():
+                sel = room_listbox.curselection()
+                if not sel:
+                    messagebox.showwarning("提示", "請選擇一個房間")
+                    return
+                room_id = rooms[sel[0]]['room_id']
+                game_name = rooms[sel[0]]['game']
+                # check if downloaded
+                user_dir = os.path.join('player/downloads', self.client.username, game_name)
+                if not os.path.exists(user_dir):
+                    res = messagebox.askyesno("尚未下載", f"你尚未下載 {game_name}，是否現在下載？")
+                    if res:
+                        ok = self.client.download_game(game_name)
+                        if not ok:
+                            messagebox.showerror("下載失敗", "遊戲下載失敗")
+                            return
+                    else:
+                        return
+                success, msg = self.client.join_room(room_id)
+                if success:
+                    messagebox.showinfo("加入房間", msg)
+                    self.hide_all_frames()
+                    self.room_frame.pack()
+                else:
+                    messagebox.showerror("加入失敗", msg)
+            tk.Button(top, text="加入房間", command=join_selected).pack()
         tk.Button(top, text="返回", command=top.destroy).pack(pady=5)
 
     def refresh_games(self):
         self.games_listbox.delete(0, tk.END)
-        games = self.client.get_game_list()
-        for g in games:
-            self.games_listbox.insert(tk.END, g)
+        if not hasattr(self, 'store_title_label'):
+            self.store_title_label = tk.Label(self.lobby_frame, text="遊戲商城", font=("Arial", 16, "bold"))
+            self.store_title_label.pack(before=self.games_listbox)
+        self.games_info = self.client.get_game_list()  # 存下所有遊戲資訊
+        for g in self.games_info:
+            display = f"{g.get('game_name', '')} | {g.get('maker', '')}"
+            self.games_listbox.insert(tk.END, display)
+        if not hasattr(self, 'download_btn'):
+            self.download_btn = tk.Button(self.lobby_frame, text="下載", command=self.download_selected_game)
+            self.download_btn.pack()
+        # 綁定雙擊事件
+        self.games_listbox.bind('<Double-Button-1>', self.show_game_detail)
 
-    def create_room(self):
+    def show_game_detail(self, event):
+        selection = self.games_listbox.curselection()
+        if not selection:
+            return
+        idx = selection[0]
+        game = self.games_info[idx]
+        detail = f"遊戲名稱: {game.get('game_name', '')}\n"
+        detail += f"製作者: {game.get('maker', '')}\n"
+        detail += f"版本: {game.get('version', '')}\n"
+        detail += f"描述: {game.get('description', '')}\n"
+        # 顯示評論
+        reviews = game.get('reviews', [])
+        if reviews:
+            detail += "\n評論：\n"
+            for r in reviews:
+                detail += f"- {r}\n"
+        import tkinter.messagebox as messagebox
+        import tkinter as tk
+        top = tk.Toplevel(self.root)
+        top.title("遊戲詳細資訊")
+        label = tk.Label(top, text=detail, justify="left", anchor="w", font=("Arial", 12))
+        label.pack(padx=20, pady=20)
+
+    def download_selected_game(self):
         selection = self.games_listbox.curselection()
         if not selection:
             messagebox.showwarning("提示", "請先選擇一個遊戲")
             return
         game_info = self.games_listbox.get(selection[0])
         game_name = game_info.split(' ')[0]
+        user_dir = os.path.join('player/downloads', self.client.username, game_name)
+        if os.path.exists(user_dir):
+            messagebox.showinfo("已下載", "你已經下載過這個遊戲")
+            return
+        ok = self.client.download_game(game_name)
+        if ok:
+            messagebox.showinfo("下載成功", f"遊戲 {game_name} 下載完成")
+        else:
+            messagebox.showerror("下載失敗", f"遊戲 {game_name} 下載失敗")
+
+    def create_room(self):
+        game_name = self.choose_downloaded_game
+        if not game_name:
+            return
         success, result = self.client.create_room(game_name)
         if success:
             messagebox.showinfo("建立房間", "房間建立成功，房號：" + str(result))
@@ -163,7 +239,15 @@ class LobbyGUI:
             messagebox.showerror("建立失敗", "建立房間失敗：" + str(result))
 
     def show_my_games(self):
-        messagebox.showinfo("我的遊戲", "showing downloaded games")
+        user_dir = os.path.join('player/downloads', self.client.username)
+        if not os.path.exists(user_dir):
+            messagebox.showinfo("我的遊戲", "你尚未下載任何遊戲")
+            return
+        games = [d for d in os.listdir(user_dir) if os.path.isdir(os.path.join(user_dir, d))]
+        if not games:
+            messagebox.showinfo("我的遊戲", "你尚未下載任何遊戲")
+        else:
+            messagebox.showinfo("我的遊戲", "\n".join(games))
 
     def leave_room(self):
         self.hide_all_frames()
@@ -184,6 +268,22 @@ class LobbyGUI:
 
     def start_game(self):
         print("starting game...")
+
+    def choose_downloaded_game(self):
+        user_dir = os.path.join('player/downloads', self.client.username)
+        if not os.path.exists(user_dir):
+            messagebox.showinfo("我的遊戲", "你尚未下載任何遊戲")
+            return None
+        games = [d for d in os.listdir(user_dir) if os.path.isdir(os.path.join(user_dir, d))]
+        if not games:
+            messagebox.showinfo("我的遊戲", "你尚未下載任何遊戲")
+            return None
+        msg = "你已下載的遊戲：\n" + "\n".join(games) + "\n請輸入要選擇的遊戲名稱："
+        game_name = simpledialog.askstring("選擇遊戲", msg)
+        if game_name not in games:
+            messagebox.showerror("錯誤", "請輸入正確的遊戲名稱")
+            return None
+        return game_name
 
     def exit_app(self):
         print()
