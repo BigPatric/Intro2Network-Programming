@@ -67,7 +67,7 @@ class DeveloperClient:
         game_name = os.path.basename(folder)
         zip_name = self.zip_game(folder)
         try:
-            send_json(self.sock, {'command': 'upload_game', 'game_name': game_name, 'version': '1.0.0'})
+            send_json(self.sock, {'command': 'upload_game', 'game_name': game_name, 'version': '1.0.0', 'role': 'developer'})
             send_file(self.sock, zip_name)
             res = recv_json(self.sock)
         finally:
@@ -77,7 +77,7 @@ class DeveloperClient:
     def logout(self):
         if self.username and self.ensure_connection():
             try:
-                send_json(self.sock, {'command': 'logout'})
+                send_json(self.sock, {'command': 'logout', 'role': 'developer'})
             except Exception:
                 pass
         self.username = None

@@ -1,6 +1,7 @@
 import os
 import sys
 from common.protocol import send_json
+import time
 
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 
@@ -33,7 +34,15 @@ class LobbyService:
             self.get_game_rooms(conn)
         elif command == 'create_room':
             self.create_room(conn, data, username)
-        # 可以繼續添加其他指令...
+        elif command == 'logout':
+            username = self.conn_manager.get_username(conn)
+            self.conn_manager.remove_connection(conn)
+            if username:
+                try:
+                    self.db_manager.remove_online_user(username)
+                except Exception as e:
+                    print(f"[DEBUG] remove_online_user on logout error: {e}")
+                    # 登出後不需要回傳，客戶端會自行處理介面切換
         else:
             send_json(conn, {'status': 'fail', 'message': f'未知的大廳指令: {command}'})
 
@@ -42,11 +51,17 @@ class LobbyService:
         password = data.get('password')
         user = self.db_manager.login_user(username, password, 'player')
         if user:
-            self.conn_manager.add_connection(conn, username)
+            if not self.conn_manager.add_connection(conn, username):
+                send_json(conn, {'status': 'fail', 'message': '此帳號已在其他地方登入'})
+                return
             send_json(conn, {'status': 'success', 'message': '玩家登入成功'})
         else:
             send_json(conn, {'status': 'fail', 'message': '帳號或密碼錯誤'})
 
+    def logout(self, conn):
+        self.conn_manager.remove_connection(conn)
+        send_json(conn, {'status': 'success', 'message': '已成功登出'})
+        
     def register(self, conn, data):
         username = data.get('username')
         password = data.get('password')
@@ -57,8 +72,13 @@ class LobbyService:
             send_json(conn, {'status': 'fail', 'message': '註冊失敗，帳號可能已存在'})
 
     def get_online_players(self, conn):
-        players = self.conn_manager.get_all_usernames()
+        try:
+            players = self.db_manager.get_online_users()
+        except Exception as e:
+            print(f"無法取得線上玩家: {e}")
+            players = []
         send_json(conn, {'status': 'success', 'players': players})
+        print("sent all online players")
 
     def get_game_rooms(self, conn):
         # 簡化回傳的房間資訊

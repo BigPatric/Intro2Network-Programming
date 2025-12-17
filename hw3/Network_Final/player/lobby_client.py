@@ -1,11 +1,10 @@
 import socket
 import json
 import os
-import zipfile
-import subprocess
-import time
 import sys
+import subprocess
 
+# 確保可以從上層目錄 import
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 from common.protocol import send_json, recv_json, recv_file
 from common.ip_port_config import SERVER_IP, SERVER_PORT
@@ -22,59 +21,72 @@ class LobbyClient:
             self.sock.connect((SERVER_IP, SERVER_PORT))
             return True
         except Exception as e:
-            print(f"Cannot connect to server: {e}")
+            print(f"連線到大廳伺服器失敗: {e}")
             return False
 
     def login_with_credentials(self, username, password):
+        # 登入請求中加入 role，以便伺服器分派
         send_json(self.sock, {'command': 'login', 'username': username, 'password': password, 'role': 'player'})
         res = recv_json(self.sock)
+        print(f"[Lobby Client] 收到登入回應: {res}") # 偵錯日誌
         if res and res.get('status') == 'success':
             self.username = username
             return True, "登入成功"
         else:
-            return False, res.get('message') if res else 'No response'
+            return False, res.get('message') if res else '沒有回應'
+
     def register_user(self, username, password):
         send_json(self.sock, {'command': 'register', 'username': username, 'password': password, 'role': 'player'})
         res = recv_json(self.sock)
+        print(f"[Lobby Client] 收到註冊回應: {res}") # 偵錯日誌
         if res and res.get('status') == 'success':
-            return True
+            return True, res.get('message')
         else:
-            return False
+            return False, res.get('message') if res else '沒有回應'
+
     def logout(self):
-        if not self.sock:
+        if not self.username:
             return
-        try:
-            send_json(self.sock, {'command': 'logout'})
-            # 登出後不需要等待伺服器回應
-        except Exception as e:
-            print(f"登出時發生錯誤: {e}")
-    def get_game_list(self):
-        send_json(self.sock, {'command': 'get_game_list'})
+        send_json(self.sock, {'command': 'logout', 'role': 'player'})
         res = recv_json(self.sock)
-        return res.get('games', []) if res and res.get('status') == 'success' else []
+        print(f"登出回應: {res}")
+        self.username = None
+
+    def get_online_players(self):
+        send_json(self.sock, {'command': 'get_online_players', 'role': 'player'})
+        res = recv_json(self.sock)
+        print(f"[Lobby Client] 收到線上玩家回應: {res}")
+        if res and res.get('status') == 'success':
+            return res.get('players', [])
+        else:
+            print(f"取得線上玩家失敗: {res.get('message') if res else '沒有回應'}")
+            return []
+
+    def get_game_list(self):
+        send_json(self.sock, {'command': 'get_game_list', 'role': 'player'})
+        res = recv_json(self.sock)
+        if res and res.get('status') == 'success':
+            return res.get('games', [])
+        return []
 
     def create_room(self, game_name):
-        send_json(self.sock, {'command': 'create_room', 'username': self.username, 'game_name': game_name})
+        send_json(self.sock, {'command': 'create_room', 'game_name': game_name , 'role': 'player'})
         res = recv_json(self.sock)
-        if res and res.get('status') == 'success':
-            return True, res.get('room_id')
-        else:
-            return False, res.get('message') if res else 'No response'
+        return res and res.get('status') == 'success'
 
     def list_rooms(self):
-        send_json(self.sock, {'command': 'list_rooms'})
+        send_json(self.sock, {'command': 'list_rooms', 'role': 'player'})
         res = recv_json(self.sock)
-        return res.get('rooms', []) if res and res.get('status') == 'success' else []
+        if res and res.get('status') == 'success':
+            return res.get('rooms', [])
+        return []
 
     def launch_game_client(self, game_name, ip, port):
-        config_path = os.path.join(DOWNLOAD_BASE, game_name, 'game_config.json')
-        with open(config_path) as f:
-            cfg = json.load(f)
-        client_script = os.path.join(DOWNLOAD_BASE, game_name, cfg.get('client_exe_file', 'client.py'))
-        run_cmd = cfg.get('run_cmd', 'python')
-        subprocess.Popen([run_cmd, client_script, ip, str(port)])
+        game_client_path = os.path.join(DOWNLOAD_BASE, self.username, game_name, 'client.py')
+        if os.path.exists(game_client_path):
+            subprocess.Popen(['python3', game_client_path, '--ip', ip, '--port', str(port)])
+        else:
+            print(f"找不到遊戲客戶端: {game_client_path}")
 
     def close(self):
-        if self.sock:
-            self.sock.close()
-            self.sock = None
+        self.sock.close()

@@ -107,8 +107,8 @@ def _get_online_users():
     resp = db_request('select', {
         'query': "SELECT username FROM online_users"
     })
-    if resp['status'] == 'ok':
-        return [r[0] for r in resp['result']]
+    if resp and resp.get('status') == 'ok' and resp.get('result') is not None:
+        return [row[0] for row in resp['result']]
     return []
 
 class DatabaseManager:
