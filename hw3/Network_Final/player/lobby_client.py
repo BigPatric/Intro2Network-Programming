@@ -17,9 +17,16 @@ class LobbyClient:
     def __init__(self):
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.username = None
+        self.listener_thread = None
+        self.stop_listening = False
+        self.current_room_id = None
+        
+    def start_listening(self):
+        if self.listener_thread and self.listener_thread.is_alive():
+            return
+        self.stop_listening = False
         self.listener_thread = threading.Thread(target=self.listen_to_server, daemon=True)
         self.listener_thread.start()
-        self.current_room_id = None
         
     def connect(self):
         try:
@@ -102,20 +109,30 @@ class LobbyClient:
         
     def listen_to_server(self):
         print("[Listener] 監聽伺服器訊息中...")
-        while True:
+        while not self.stop_listening:
             try:
                 res = recv_json(self.sock)
-                print(f"[Listener] 收到伺服器訊息: {res}")
+                
                 if res is None:
+                    print("[Listener] 連線中斷")
                     break
+                
+                print(f"[Listener] 收到訊息: {res}")
+                
                 if res.get('status') == 'start_game':
-                    print("[Listener] 收到 start_game 指令，準備啟動遊戲客戶端...")
-                    game_name = res.get('game_name')
-                    ip = res.get('ip')
-                    port = res.get('port')
-                    self.launch_game_client(game_name, ip, port)
+                    try:
+                        game_name = res['game_name']
+                        ip = res['ip']
+                        port = res['port']
+                        self.launch_game_client(game_name, ip, port)
+                    except Exception as e:
+                        print(f"[Listener] 啟動遊戲客戶端失敗: {e}")
+                    
             except Exception as e:
-                print(f"[Listener] Exception: {e}")
+                print(f"[Listener] 錯誤 (若為 socket timeout 可忽略): {e}")
+                if self.stop_listening:
+                    break
+                # 嚴重錯誤才 break，否則 continue
                 break
     
     def start_game(self, room_id):
@@ -125,7 +142,7 @@ class LobbyClient:
         game_client_path = os.path.join(DOWNLOAD_BASE, self.username, game_name, 'client.py')
         print(f"[Lobby Client] 嘗試啟動遊戲客戶端: {game_client_path} with IP: {ip}, Port: {port}")
         if os.path.exists(game_client_path):
-            subprocess.Popen(['python3', game_client_path, ip, str(port)])
+            subprocess.Popen([sys.executable, game_client_path, ip, str(port)])
         else:
             print(f"找不到遊戲客戶端: {game_client_path}")
 

@@ -165,6 +165,7 @@ class LobbyGUI:
                         return
                 success, msg = self.client.join_room(room_id)
                 if success:
+                    self.client.start_listening()
                     messagebox.showinfo("加入房間", "加入成功！" + str(msg))
                     self.hide_all_frames()
                     self.room_frame.pack()
@@ -238,6 +239,7 @@ class LobbyGUI:
             return
         success, result = self.client.create_room(game_name)
         if success:
+            self.client.start_listening()
             messagebox.showinfo("建立房間", "房間建立成功，房號：" + str(result))
             self.hide_all_frames()
             self.room_frame.pack()

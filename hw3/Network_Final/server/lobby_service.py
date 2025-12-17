@@ -183,7 +183,7 @@ class LobbyService:
         # 啟動遊戲伺服器進程
         game_dir = os.path.abspath(f"server/uploaded_games_extracted/{room['game']}")
         server_py = os.path.join(game_dir, "game_server.py")
-        subprocess.Popen(['python3', server_py, str(port)], cwd=game_dir)
+        subprocess.Popen([sys.executable, server_py, str(port)], cwd=game_dir)
 
         # 通知所有房內玩家
         for player in room['players']:
