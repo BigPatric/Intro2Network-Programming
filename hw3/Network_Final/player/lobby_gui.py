@@ -2,6 +2,7 @@ import tkinter as tk
 from tkinter import messagebox, simpledialog
 from lobby_client import LobbyClient
 import os
+import threading
 
 class LobbyGUI:
     def __init__(self, root):
@@ -141,8 +142,7 @@ class LobbyGUI:
             for room in rooms:
                 room_listbox.insert(
                     tk.END,
-                    f"{room['room_id']} | {room['game']} | Host: {room['host']} | Players: {', '.join(room['players'])}"
-                )
+                    f"{room['room_id']} | {room['game']} | Host: {room['host']} | Players: {room.get('player_count', '?')}"                )
             def join_selected():
                 sel = room_listbox.curselection()
                 if not sel:
@@ -173,9 +173,14 @@ class LobbyGUI:
 
     def refresh_games(self):
         self.games_listbox.delete(0, tk.END)
+        # The title
         if not hasattr(self, 'store_title_label'):
             self.store_title_label = tk.Label(self.lobby_frame, text="遊戲商城", font=("Arial", 16, "bold"))
             self.store_title_label.pack(before=self.games_listbox)
+        # The entry
+        if not hasattr(self, 'games_list_title'):
+            self.games_list_title = tk.Label(self.lobby_frame, text="Game Name | Developer", font=("Arial", 12, "bold"), anchor="w", justify="left")
+            self.games_list_title.pack(before=self.games_listbox)
         self.games_info = self.client.get_game_list()  # 存下所有遊戲資訊
         for g in self.games_info:
             display = f"{g.get('game_name', '')} | {g.get('maker', '')}"
@@ -202,7 +207,6 @@ class LobbyGUI:
             detail += "\n評論：\n"
             for r in reviews:
                 detail += f"- {r}\n"
-        import tkinter.messagebox as messagebox
         import tkinter as tk
         top = tk.Toplevel(self.root)
         top.title("遊戲詳細資訊")
@@ -227,7 +231,7 @@ class LobbyGUI:
             messagebox.showerror("下載失敗", f"遊戲 {game_name} 下載失敗")
 
     def create_room(self):
-        game_name = self.choose_downloaded_game
+        game_name = self.choose_downloaded_game()
         if not game_name:
             return
         success, result = self.client.create_room(game_name)
@@ -254,8 +258,11 @@ class LobbyGUI:
         self.lobby_frame.pack()
 
     def logout(self):
-        if self.client.username:
-            self.client.logout()
+        try:
+            if self.client.username:
+                self.client.logout()
+        except Exception as e:
+            print(f"登出時發生錯誤: {e}")
         self.hide_all_frames()
         self.login_frame.pack()
         self.username_entry.delete(0, 'end')
