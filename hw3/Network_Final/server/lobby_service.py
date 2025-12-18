@@ -99,6 +99,21 @@ class LobbyService:
         
     def create_room(self, conn, data, username):
         game_name = data.get('game_name')
+        client_version = data.get('version')
+        # 取得 server 端遊戲版本
+        extracted_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), 'uploaded_games_extracted'))
+        config_path = os.path.join(extracted_dir, game_name, 'config.json')
+        server_version = ""
+        if os.path.exists(config_path):
+            with open(config_path, 'r', encoding='utf-8') as f:
+                try:
+                    info = json.load(f)
+                    server_version = info.get('version', '')
+                except Exception:
+                    pass
+        if client_version != server_version:
+            send_json(conn, {'status': 'fail', 'message': f'遊戲版本不符，請重新下載最新版本（server: {server_version}, client: {client_version}）'})
+            return
         room_id = ''.join(random.choices(string.ascii_uppercase + string.digits, k=6))
         while room_id in self.game_rooms:
             room_id = ''.join(random.choices(string.ascii_uppercase + string.digits, k=6))
@@ -122,11 +137,24 @@ class LobbyService:
     
     def join_room(self, conn, data, username):
         room_id = data.get('room_id')
+        client_version = data.get('version')
         if not room_id or room_id not in self.game_rooms:
             send_json(conn, {'status': 'fail', 'message': '房間不存在'})
             return
-        if username in self.game_rooms[room_id]['players']:
-            send_json(conn, {'status': 'fail', 'message': '你已在房間內'})
+        game_name = self.game_rooms[room_id]['game']
+        # 取得 server 端遊戲版本
+        extracted_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), 'uploaded_games_extracted'))
+        config_path = os.path.join(extracted_dir, game_name, 'config.json')
+        server_version = ""
+        if os.path.exists(config_path):
+            with open(config_path, 'r', encoding='utf-8') as f:
+                try:
+                    info = json.load(f)
+                    server_version = info.get('version', '')
+                except Exception:
+                    pass
+        if client_version != server_version:
+            send_json(conn, {'status': 'fail', 'message': f'遊戲版本不符，請重新下載最新版本（server: {server_version}, client: {client_version}）'})
             return
         self.game_rooms[room_id]['players'].append(username)
         send_json(conn, {'status': 'success', 'message': f'已加入房間 {room_id}'})

@@ -82,7 +82,8 @@ class LobbyClient:
         return []
 
     def create_room(self, game_name):
-        send_json(self.sock, {'command': 'create_room', 'game_name': game_name , 'role': 'player'})
+        version = self.get_local_game_version(game_name)
+        send_json(self.sock, {'command': 'create_room', 'game_name': game_name ,'version': version, 'role': 'player'})
         res = recv_json(self.sock)
         if res and res.get('status') == 'success':
             self.current_room_id = res.get('room_id')
@@ -98,7 +99,14 @@ class LobbyClient:
         return []
 
     def join_room(self, room_id):
-        send_json(self.sock, {'command': 'join_room', 'room_id': room_id, 'role': 'player'})
+        rooms = self.list_rooms()
+        game_name = None
+        for room in rooms:
+            if room['room_id'] == room_id:
+                game_name = room['game']
+                break
+        version = self.get_local_game_version(game_name) if game_name else ""
+        send_json(self.sock, {'command': 'join_room', 'room_id': room_id, 'version': version, 'role': 'player'})
         res = recv_json(self.sock)
         if res and res.get('status') == 'success':
             room_info = res.get('room_info', {})
@@ -156,6 +164,18 @@ class LobbyClient:
             recv_file(self.sock, client_py_path)
             return True
         return False
+    
+    def get_local_game_version(self, game_name):
+        user_dir = os.path.join(DOWNLOAD_BASE, self.username, game_name)
+        config_path = os.path.join(user_dir, "config.json")
+        if os.path.exists(config_path):
+            try:
+                with open(config_path, "r", encoding="utf-8") as f:
+                    info = json.load(f)
+                    return info.get("version", "")
+            except Exception:
+                return ""
+        return ""
 
     def close(self):
         self.sock.close()
