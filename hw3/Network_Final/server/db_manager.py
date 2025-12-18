@@ -4,9 +4,10 @@ db_manager.py
 """
 import socket
 import json
+from common.ip_port_config import DB_SERVER_IP, DB_SERVER_PORT
 
-DB_SERVER_HOST = '127.0.0.1'
-DB_SERVER_PORT = 9000
+DB_SERVER_HOST = DB_SERVER_IP
+DB_SERVER_PORT = DB_SERVER_PORT
     
 
 def db_request(action, params=None):
@@ -42,6 +43,39 @@ def _login_user(username, password, role):
     if resp['status'] == 'ok' and resp['result']:
         return resp['result'][0][0]
     return None
+
+def _add_game(game_name, developer_name, version, path):
+    resp = db_request('insert', {
+        'query': "INSERT INTO games (name, developer_name, version, path) VALUES (?, ?, ?, ?)",
+        'args': [game_name, developer_name, version, path]
+    })
+    return resp['status'] == 'ok'
+
+def _update_game_version(game_name, version, path):
+    resp = db_request('update', {
+        'query': "UPDATE games SET version = ?, path = ? WHERE name = ?",
+        'args': [version, path, game_name]
+    })
+    return resp['status'] == 'ok'
+
+def _get_game_info(game_name):
+    resp = db_request('select', {
+        'query': "SELECT name, developer_name, version, path FROM games WHERE name = ?",
+        'args': [game_name]
+    })
+    if resp['status'] == 'ok' and resp['result']:
+        r = resp['result'][0]
+        return {"name": r[0], "developer_name": r[1], "version": r[2], "path": r[3]}
+    return None
+
+def _get_games_by_developer(developer_name):
+    resp = db_request('select', {
+        'query': "SELECT name FROM games WHERE developer_name = ?",
+        'args': [developer_name]
+    })
+    if resp['status'] == 'ok' and resp['result']:
+        return [row[0] for row in resp['result']]
+    return []
 
 def _add_game_metadata(info):
     resp = db_request('insert', {
@@ -117,6 +151,18 @@ class DatabaseManager:
 
     def login_user(self, username, password, role):
         return _login_user(username, password, role)
+
+    def add_game(self, game_name, developer_name, version, path):
+        return _add_game(game_name, developer_name, version, path)
+
+    def update__game_version(self, game_name, version, path):
+        return _update_game_version(game_name, version, path)
+
+    def get_game_info(self, game_name):
+        return _get_game_info(game_name)
+
+    def get_games_by_developer(self, developer_name):
+        return _get_games_by_developer(developer_name)
 
     def add_game_metadata(self, info):
         return _add_game_metadata(info)

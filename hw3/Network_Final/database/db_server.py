@@ -3,11 +3,13 @@ import json
 import sqlite3
 import threading
 import os
-
+import sys
+sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
+from common.ip_port_config import DB_SERVER_IP, DB_SERVER_PORT
 # 確定資料庫檔案的路徑
 DB_FILE = os.path.join(os.path.dirname(__file__), 'storage', 'DATABASE.db')
-HOST = '127.0.0.1'
-PORT = 9000
+HOST = DB_SERVER_IP
+PORT = DB_SERVER_PORT
 
 def db_init():
     """初始化資料庫和資料表"""
@@ -27,10 +29,9 @@ def db_init():
     cur.execute('''
         CREATE TABLE IF NOT EXISTS games (
             name TEXT PRIMARY KEY,
-            developer TEXT,
+            developer_name TEXT,
             version TEXT,
-            description TEXT,
-            entry_point TEXT
+            path TEXT
         )
     ''')
     # 遊戲房間資料表

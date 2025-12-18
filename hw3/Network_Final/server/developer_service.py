@@ -1,6 +1,7 @@
 import os
 import sys
 import zipfile
+import json
 from common.protocol import send_json, recv_file
 
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
@@ -34,8 +35,36 @@ class DeveloperService:
 
             if command == 'upload_game':
                 self.upload_game(conn, data, username)
+            elif command == 'update_game':
+                self.update_game(conn, data, username)
+            elif command == 'get_game_list':
+                self.get_game_list(conn)
             else:
                 send_json(conn, {'status': 'fail', 'message': f'未知的開發者指令: {command}'})
+
+    def get_game_list(self, conn):
+        try:
+            games = []
+            extracted_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), 'uploaded_games_extracted'))
+            for game_name in os.listdir(extracted_dir):
+                game_dir = os.path.join(extracted_dir, game_name)
+                if not os.path.isdir(game_dir):
+                    continue
+                config_path = os.path.join(game_dir, 'config.json')
+                if os.path.exists(config_path):
+                    with open(config_path, 'r', encoding='utf-8') as f:
+                        info = json.load(f)
+                    info.setdefault('game_name', game_name)
+                    info.setdefault('maker', '')
+                    info.setdefault('version', '')
+                    info.setdefault('description', '')
+                    games.append(info)
+                else:
+                    games.append({"game_name": game_name, "maker": "", "version": "", "description": ""})
+            send_json(conn, {'status': 'success', 'games': games})
+        except Exception as e:
+            print(f"無法取得遊戲列表: {e}")
+            send_json(conn, {'status': 'fail', 'message': '無法取得遊戲列表'})
 
     def login(self, conn, data):
         username = data.get('username')
@@ -56,22 +85,57 @@ class DeveloperService:
         else:
             send_json(conn, {'status': 'fail', 'message': '註冊失敗，帳號可能已存在'})
 
-    def upload_game(self, conn, data, developer_name):
-        game_name = data.get('game_name')
-        if not game_name:
-            send_json(conn, {'status': 'fail', 'message': '缺少遊戲名稱'})
-            return
+    def _process_game_files(self, conn, game_name):
         os.makedirs(UPLOADED_GAMES_DIR, exist_ok=True)
         os.makedirs(EXTRACTED_GAMES_DIR, exist_ok=True)
         zip_path = os.path.join(UPLOADED_GAMES_DIR, f"{game_name}.zip")
         recv_file(conn, zip_path)
-        # 自動解壓縮到 uploaded_games_extracted/game_name/
         extract_path = os.path.join(EXTRACTED_GAMES_DIR, game_name)
         if os.path.exists(extract_path):
-            # 若已存在則先刪除
             import shutil
             shutil.rmtree(extract_path)
         os.makedirs(extract_path, exist_ok=True)
         with zipfile.ZipFile(zip_path, 'r') as zip_ref:
             zip_ref.extractall(extract_path)
-        send_json(conn, {'status': 'success', 'message': '遊戲上傳並解壓縮完成'})
+        return extract_path
+
+    def upload_game(self, conn, data, developer_name):
+        game_name = data.get('game_name')
+        version = data.get('version')
+        if not game_name or not version:
+            send_json(conn, {'status': 'fail', 'message': '缺少遊戲名稱或版本'})
+            return
+        
+        if self.db_manager.get_game_info(game_name):
+            send_json(conn, {'status': 'fail', 'message': '此遊戲已存在，請使用更新功能'})
+            return
+
+        extract_path = self._process_game_files(conn, game_name)
+        
+        if self.db_manager.add_game(game_name, developer_name, version, extract_path):
+            send_json(conn, {'status': 'success', 'message': '遊戲上傳成功'})
+        else:
+            send_json(conn, {'status': 'fail', 'message': '遊戲資訊儲存失敗'})
+
+    def update_game(self, conn, data, developer_name):
+        game_name = data.get('game_name')
+        version = data.get('version')
+        if not game_name or not version:
+            send_json(conn, {'status': 'fail', 'message': '缺少遊戲名稱或版本'})
+            return
+
+        game_info = self.db_manager.get_game_info(game_name)
+        if not game_info:
+            send_json(conn, {'status': 'fail', 'message': '找不到此遊戲，請先上傳'})
+            return
+        
+        if game_info['developer_name'] != developer_name:
+            send_json(conn, {'status': 'fail', 'message': '您沒有權限更新此遊戲'})
+            return
+
+        extract_path = self._process_game_files(conn, game_name)
+
+        if self.db_manager.update_game_version(game_name, version, extract_path):
+            send_json(conn, {'status': 'success', 'message': '遊戲更新成功'})
+        else:
+            send_json(conn, {'status': 'fail', 'message': '遊戲資訊更新失敗'})

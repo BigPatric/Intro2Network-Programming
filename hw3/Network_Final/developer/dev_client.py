@@ -74,6 +74,30 @@ class DeveloperClient:
             os.remove(zip_name)
         return res
 
+    def get_game_list(self):
+        if not self.ensure_connection():
+            return None
+        send_json(self.sock, {'command': 'get_developer_games', 'username': self.username, 'role': 'developer'})
+        res = recv_json(self.sock)
+        if res and res.get('status') == 'success':
+            return res.get('games')
+        return []
+
+    def update_game(self, folder):
+        if not self.ensure_connection():
+            return {'status': 'fail', 'message': '連線失敗'}
+        if not folder or not os.path.isdir(folder):
+            return {'status': 'fail', 'message': '請選擇正確的遊戲資料夾'}
+        game_name = os.path.basename(folder)
+        zip_name = self.zip_game(folder)
+        try:
+            send_json(self.sock, {'command': 'update_game', 'game_name': game_name, 'version': '1.0.1', 'role': 'developer'})
+            send_file(self.sock, zip_name)
+            res = recv_json(self.sock)
+        finally:
+            os.remove(zip_name)
+        return res
+
     def logout(self):
         if self.username and self.ensure_connection():
             try:
