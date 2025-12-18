@@ -85,6 +85,22 @@ class DeveloperService:
         else:
             send_json(conn, {'status': 'fail', 'message': '註冊失敗，帳號可能已存在'})
 
+    def _update_config_maker(self, extract_path, developer_name):
+        """讀取 config.json，覆寫 maker 欄位，然後寫回"""
+        config_path = os.path.join(extract_path, 'config.json')
+        if not os.path.exists(config_path):
+            print(f"[Warning] 遊戲 {os.path.basename(extract_path)} 缺少 config.json")
+            return
+        try:
+            with open(config_path, 'r+', encoding='utf-8') as f:
+                config_data = json.load(f)
+                config_data['maker'] = developer_name
+                f.seek(0) # 回到檔案開頭
+                json.dump(config_data, f, ensure_ascii=False, indent=2)
+                f.truncate() # 清除多餘的舊內容
+        except Exception as e:
+            print(f"更新 config.json 失敗: {e}")
+
     def _process_game_files(self, conn, game_name):
         os.makedirs(UPLOADED_GAMES_DIR, exist_ok=True)
         os.makedirs(EXTRACTED_GAMES_DIR, exist_ok=True)
@@ -97,6 +113,7 @@ class DeveloperService:
         os.makedirs(extract_path, exist_ok=True)
         with zipfile.ZipFile(zip_path, 'r') as zip_ref:
             zip_ref.extractall(extract_path)
+        self._update_config_maker(extract_path, self.conn_manager.get_username(conn))
         return extract_path
 
     def upload_game(self, conn, data, developer_name):
