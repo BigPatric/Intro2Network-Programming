@@ -187,12 +187,16 @@ class LobbyService:
             send_json(conn, {'status': 'fail', 'message': '無法取得遊戲列表'})
     def download_game(self, conn, data):
         game_name = data.get('game_name')
-        client_py_path = os.path.join("server/uploaded_games_extracted", game_name, "client.py")
-        if not os.path.exists(client_py_path):
+        base_dir = os.path.join("server/uploaded_games_extracted", game_name)
+        client_py = os.path.join(base_dir, "client.py")
+        config_json = os.path.join(base_dir, "config.json")
+        if not os.path.exists(client_py) or not os.path.exists(config_json):
             send_json(conn, {'status': 'fail', 'message': '遊戲檔案不存在'})
             return
         send_json(conn, {'status': 'ready'})
-        send_file(conn, client_py_path)
+        # 依序傳送 client.py 與 config.json
+        send_file(conn, client_py)
+        send_file(conn, config_json)
     def start_game(self, conn, data, username):
         room_id = data.get('room_id')
         if not room_id or room_id not in self.game_rooms:

@@ -161,7 +161,9 @@ class LobbyClient:
             user_dir = os.path.join(DOWNLOAD_BASE, self.username, game_name)
             os.makedirs(user_dir, exist_ok=True)
             client_py_path = os.path.join(user_dir, "client.py")
+            config_json_path = os.path.join(user_dir, "config.json")
             recv_file(self.sock, client_py_path)
+            recv_file(self.sock, config_json_path)
             return True
         return False
     
