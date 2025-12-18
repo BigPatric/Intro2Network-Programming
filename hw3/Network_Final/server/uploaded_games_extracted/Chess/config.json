@@ -1,7 +1,7 @@
 {
   "game_name": "Chess",
-  "version": "1.0",
-  "maker": "TestMaker",
+  "version": "1.2",
+  "maker": "deva",
   "numbers_required": 2,
   "description": "一個簡單的五子棋。 用方向鍵移動 enter 落子",
   "stars": 4.5,

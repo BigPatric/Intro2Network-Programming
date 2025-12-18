@@ -3,6 +3,7 @@ from tkinter import messagebox, simpledialog
 from lobby_client import LobbyClient
 import os
 import threading
+import shutil
 
 class LobbyGUI:
     def __init__(self, root):
@@ -225,8 +226,7 @@ class LobbyGUI:
         game_name = game_info.split(' ')[0]
         user_dir = os.path.join('player/downloads', self.client.username, game_name)
         if os.path.exists(user_dir):
-            messagebox.showinfo("已下載", "你已經下載過這個遊戲")
-            return
+            shutil.rmtree(user_dir)
         ok = self.client.download_game(game_name)
         if ok:
             messagebox.showinfo("下載成功", f"遊戲 {game_name} 下載完成")

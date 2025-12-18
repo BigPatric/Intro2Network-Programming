@@ -61,7 +61,7 @@ class DevGUI:
         tk.Label(self.upload_frame, text="(系統將自動壓縮上傳)", fg="grey").pack()
         tk.Label(self.upload_frame, text="資料夾內需包含 client.py, game_server.py, config.json", fg="blue").pack()
         config_format = 'config.json 格式: {"game_name": "遊戲名", "version": "1.0", "maker": "作者", "description": "描述"}'
-        tk.Label(self.upload_frame, text=config_format, fg="dark green", font=("Arial", 9)).pack()
+        tk.Label(self.upload_frame, text=config_format, fg="green", font=("Arial", 9)).pack()
 
         tk.Button(self.upload_frame, text="選擇資料夾", command=self.select_folder).pack()
         self.selected_label = tk.Label(self.upload_frame, text="")
@@ -115,17 +115,9 @@ class DevGUI:
             self.hide_all_frames()
             messagebox.showinfo("登入成功", f"歡迎 {username}")
             self.upload_frame.pack()
-            self.load_developer_games()
             self.refresh_store_games()
         else:
             messagebox.showerror("登入失敗", res.get('message', '帳號或密碼錯誤'))
-
-    def load_developer_games(self):
-        self.games_listbox.delete(0, 'end')
-        games = self.client.get_developer_games()
-        if games:
-            for game in games:
-                self.games_listbox.insert('end', game)
 
     def refresh_store_games(self):
         self.store_listbox.delete(0, tk.END)
@@ -186,7 +178,6 @@ class DevGUI:
         res = self.client.upload_game(self.selected_folder)
         if res and res.get('status') == 'success':
             messagebox.showinfo("上傳成功", res.get('message', '上傳成功'))
-            self.load_developer_games()
         else:
             messagebox.showerror("上傳失敗", res.get('message', '未知錯誤'))
 

@@ -1,8 +1,0 @@
-{
-  "name": "my_agario",
-  "version": "1.0",
-  "description": "Simple Agario Clone",
-  "run_cmd": "python",
-  "client_exe_file": "client.py",
-  "server_exe_file": "server.py"
-}

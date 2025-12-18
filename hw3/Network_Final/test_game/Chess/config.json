@@ -1,6 +1,6 @@
 {
-  "game_name": "ChessChess",
-  "version": "1.0",
+  "game_name": "Chess",
+  "version": "1.2",
   "maker": "TestMaker",
   "numbers_required": 2,
   "description": "一個簡單的五子棋。 用方向鍵移動 enter 落子",

@@ -1,9 +1,23 @@
 # Guidance and Explanation From 112550018
 
+## Pulling 
+After pulling , make sure it is at current-safe branch
+Enter hw3/Network_Final
+
+## Clean Pycache
+under Network_Final
+```
+chmod +x clean_pycache.sh
+./clean_pycache.sh
+```
+
+## initialize database
+```
+python3 ./database/initialize.py
+```
+
 ## Some Notes
-
 可以在
-
 ```
 /common/ip_port_config
 ```
@@ -95,7 +109,7 @@ python3 or python./player/lobby_gui.py
 
 ## 關鍵架構改進
 
-- **統一的長連線模型**: 先前 Developer Client 使用的短連線模型已被棄用。現在兩種客戶端都使用長連線，解決了因頻繁建立/關閉連線而導致的「註冊後無法立即登入」等狀態同步問題。
+- **統一的長連線模型**: 現在兩種客戶端都使用長連線，解決了因頻繁建立/關閉連線而導致的「註冊後無法立即登入」等狀態同步問題。
 - **伺服器服務分層**: 伺服器邏輯被清晰地劃分為**連線層** (`server_main`)、**服務層** (`lobby_service`, `developer_service`) 和**資料層** (`db_manager`)，大幅提升了程式碼的可讀性和可擴展性。
 - **中央化連線管理**: 透過 `ConnectionManager`，伺服器可以準確地追蹤所有線上使用者，為實現廣播、即時通知等功能打下了基礎。
 
@@ -171,3 +185,35 @@ python3 or python./player/lobby_gui.py
 實際操作 SQLite，回應主伺服器的 CRUD 請求。
 SQLite DB (users.db)
 實際儲存所有使用者、遊戲等資料。
+
+
+## Developer
+
+###遊戲上傳（upload）檢查項目
+當開發者透過 Developer Client 上傳遊戲時，系統會進行以下檢查：
+
+-登入狀態檢查
+僅允許已登入且身份為開發者的使用者進行遊戲上傳。
+
+-遊戲名稱唯一性
+若為新遊戲，檢查該遊戲名稱是否已存在於資料庫，避免重複。
+若為更新遊戲，檢查該遊戲是否屬於目前登入的開發者。
+
+-檔案格式與結構
+僅允許上傳壓縮檔（如 .zip）。
+壓縮檔內必須包含指定的主程式檔案（如 main.py 或平台規範的啟動檔）。
+檢查檔案大小是否超過平台限制（如 100MB）。
+
+-遊戲描述與資訊完整性
+必須填寫遊戲名稱、簡介、版本號等基本資訊。
+檢查描述欄位不得為空。
+
+-惡意程式碼與安全性
+檢查檔案內容是否包含明顯的惡意程式碼（如禁止的系統呼叫、危險模組等）。
+禁止上傳含有執行檔（如 .exe、.bat）或非預期副檔名的檔案。
+
+-權限與所有權
+僅允許開發者上傳自己所屬的遊戲或建立新遊戲。
+不允許覆蓋其他開發者的遊戲。
+-資料庫一致性
+上傳成功後，會同步更新遊戲資訊至資料庫，確保資料一致性。

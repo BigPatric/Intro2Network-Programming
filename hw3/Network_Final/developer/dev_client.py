@@ -77,7 +77,7 @@ class DeveloperClient:
     def get_game_list(self):
         if not self.ensure_connection():
             return None
-        send_json(self.sock, {'command': 'get_developer_games', 'username': self.username, 'role': 'developer'})
+        send_json(self.sock, {'command': 'get_game_list', 'username': self.username, 'role': 'developer'})
         res = recv_json(self.sock)
         if res and res.get('status') == 'success':
             return res.get('games')
