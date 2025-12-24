@@ -117,13 +117,13 @@ class GameClientApp:
             return None
 
     def lobby_menu(self):
-        # ... (lobby_menu and other methods remain the same as the previous version) ...
         while True:
             print("\n--- Tetris Duo Lobby ---")
             print("1. 列出房間 (List Rooms)")
             print("2. 建立房間 (Create Room)")
             print("3. 加入房間 (Join Room)")
-            print("4. 登出 (Logout)")
+            print("4. 顯示線上使用者 (Show Online Users)")
+            print("5. 登出 (Logout)")
             choice = input("請輸入選項: ")
 
             if choice == '1':
@@ -133,11 +133,27 @@ class GameClientApp:
             elif choice == '3':
                 self.join_room()
             elif choice == '4':
+                self.show_online_users()
+            elif choice == '5':
                 self.lobby_sock.close()
                 print("已登出。")
                 break
             else:
                 print("無效的選項，請重新輸入。")
+
+    def show_online_users(self):
+        res = self._lobby_req(self.lobby_sock, {"action": "list_users"})
+        if not res:
+            print("[Client] 取得線上使用者失敗。")
+            return
+        users = res.get('users', [])
+        print("\n--- 線上使用者列表 ---")
+        if not users:
+            print("目前沒有線上使用者。")
+        else:
+            for u in users:
+                print(f"- {u}")
+        print("--------------------")
 
     def list_rooms(self):
         res = self._lobby_req(self.lobby_sock, {"action": "list_rooms"})
@@ -156,7 +172,13 @@ class GameClientApp:
         if not room_name:
             room_name = f"Room-{self.name}"
         
-        res = self._lobby_req(self.lobby_sock, {"action": "create_room", "data": {"name": room_name}})
+        visibility = input("房間類型？(public/private，預設 public): ").strip().lower()
+        if visibility not in ("public", "private"):
+            visibility = "public"
+        res = self._lobby_req(self.lobby_sock, {
+            "action": "create_room",
+            "data": {"name": room_name, "visibility": visibility}
+        })
         if res and res.get('status') == 'ok':
             room = res['room']
             print(f"[Client] 已建立房間 #{room['id']}，等待另一位玩家加入...")

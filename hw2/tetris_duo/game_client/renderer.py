@@ -36,7 +36,6 @@ class Renderer:
         self.room_id = None
         self.role = None
         self.start_time = None
-        # 與伺服器 game_server.game_server 的 duration_sec (60s) 對齊
         self.duration_sec = 60
         self.user_name = None
     def set_room_info(self, room_id, role, start_time=None, user_name=None):
@@ -52,7 +51,6 @@ class Renderer:
             self.my_queue.append(my_state)
         if opp_state:
             self.opp_queue.append(opp_state)
-        # 保持佇列長度適中
         if len(self.my_queue) > 120:
             self.my_queue = self.my_queue[-120:]
         if len(self.opp_queue) > 120:
@@ -62,7 +60,7 @@ class Renderer:
         if not queue:
             return None
         target = int(time.time()*1000) - self.buffer_ms
-        # 找到最後一個 at <= target 的快照
+            # 找到最後一個 at <= target 的快照
         chosen = None
         keep_from = 0
         for i, st in enumerate(queue):
@@ -73,10 +71,8 @@ class Renderer:
             else:
                 break
         if chosen is None:
-            # 還沒有足夠延遲，就用最舊的
             chosen = queue[0]
             keep_from = 0
-        # 丟掉過舊的
         if keep_from > 0:
             del queue[:keep_from]
         return chosen
@@ -125,7 +121,6 @@ class Renderer:
         shape = act.get('shape')
         ax = act.get('x')
         ay = act.get('y')
-        # 伺服器若提供當前旋轉矩陣，優先使用；否則退回到預設形狀
         mat = act.get('mat') or SHAPES.get(shape)
         if mat is not None and ax is not None and ay is not None:
             for ry, r in enumerate(mat):
@@ -173,7 +168,6 @@ class Renderer:
             "C: Hold piece",
             "Q: Quit game"
         ]
-        # 計算右下角起始座標
         tip_x = self.screen.get_width() - 320
         tip_y = self.screen.get_height() - (len(tips)*22) - 30
         for i, tip in enumerate(tips):

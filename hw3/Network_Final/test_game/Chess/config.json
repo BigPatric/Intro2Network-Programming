@@ -1,0 +1,12 @@
+{
+  "game_name": "Chess",
+  "version": "1.2",
+  "maker": "TestMaker",
+  "numbers_required": 2,
+  "description": "一個簡單的五子棋。 用方向鍵移動 enter 落子",
+  "stars": 4.5,
+  "reviews": [
+    "超簡單但有趣的小遊戲！-anon",
+    "適合練習網路連線。-anon"
+  ]
+}

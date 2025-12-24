@@ -30,7 +30,7 @@ class LobbyServer:
         # self.clients: username -> connection
         self.clients = {}
         self.active_game_procs = {}
-        self.game_servers = {}  # 用來追蹤遊戲伺服器進程
+        self.game_servers = {}
         self.project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
     # --- Password utilities (PBKDF2-HMAC-SHA256) ---
@@ -105,7 +105,6 @@ class LobbyServer:
                     password = data.get('password') or ''
                     # Duplicate login prevention: if user already logged in and different conn
                     if name in self.clients and self.clients[name] is not conn:
-                        # 檢查舊連線是否仍然有效，簡單測試 send 0-length ping (or just拒絕)
                         send_msg(conn, {'error': 'already logged in elsewhere'})
                         continue
                     r = self.db.query('User', {'name': name})
@@ -127,18 +126,32 @@ class LobbyServer:
                                 send_msg(conn, {'error': 'password not set; use empty password or re-register'})
                                 continue
                         self.clients[user['name']] = conn
+                        # 登入時設 is_online 為 True
+                        self.db.update('User', 'id', user.get('id'), {'is_online': True})
                         send_msg(conn, {'status': 'ok', 'user': {'name': user['name'], 'id': user.get('id')}})
                     else:
                         send_msg(conn, {'error': 'user not found'})
 
                 elif action == 'list_rooms':
-                    send_msg(conn, {'rooms': self.rooms.list_public()})
+                    db_rooms = self.db.query('Room', {'visibility': 'public'}).get('result', [])
+                    mem_rooms = self.rooms.list_public()
+                    # 取交集：只顯示同時存在於 DB 及記憶體的房間
+                    db_ids = set(r.get('id') for r in db_rooms if r.get('id') is not None)
+                    mem_ids = set(r.get('id') for r in mem_rooms if r.get('id') is not None)
+                    intersect_ids = db_ids & mem_ids
+                    rooms = [r for r in mem_rooms if r.get('id') in intersect_ids]
+                    send_msg(conn, {'rooms': rooms})
+                elif action == 'list_users':
+                    db_res = self.db.query('User', {'is_online': True})
+                    users = [u.get('name') for u in db_res.get('result', [])]
+                    send_msg(conn, {'users': users})
+
 
                 elif action == 'create_room':
                     if not user:
                         send_msg(conn, {'error': 'not logged in'})
                         continue
-                    room = self.rooms.create(user['name'], name=data.get('name'))
+                    room = self.rooms.create(user['name'], name=data.get('name'), visibility=data.get('visibility', 'public'))
                     self.db.create('Room', room)
                     send_msg(conn, {'status': 'ok', 'room': room})
 
@@ -173,7 +186,7 @@ class LobbyServer:
                     proc = self._launch_game_server(rid, port)
                     # update room state and persist
                     room['status'] = 'playing'
-                    room['game_port'] = port  # <--- 關鍵：同步更新 RoomManager 內的 room
+                    room['game_port'] = port 
                     self.db.update('Room', 'id', rid, {'status': 'playing', 'game_port': port})
                     send_msg(conn, {'status': 'ok', 'game_port': port})
                 elif action == 'watch_game':
@@ -192,10 +205,11 @@ class LobbyServer:
         except Exception as e:
             print('[Lobby] error', e)
         finally:
-            # 清理登入狀態
             try:
                 if user and user.get('name') in self.clients and self.clients[user['name']] is conn:
                     del self.clients[user['name']]
+                    # 登出時設 is_online 為 False
+                    self.db.update('User', 'id', user.get('id'), {'is_online': False})
             except Exception:
                 pass
             conn.close()

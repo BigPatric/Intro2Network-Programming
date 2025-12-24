@@ -36,7 +36,6 @@ class NetworkClient:
         try:
             send_msg(self.sock, {"type": "INPUT", "action": action})
         except Exception:
-            # 伺服器已關閉或管線損壞，標記為斷線，避免崩潰
             self.connected = False
 
     def _listen(self):

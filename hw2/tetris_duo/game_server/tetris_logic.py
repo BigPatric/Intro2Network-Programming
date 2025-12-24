@@ -161,7 +161,6 @@ class Board:
     def snapshot(self):
         return {
             'boardRLE': self.board_rle(),
-            # 傳回目前作用方塊的旋轉矩陣，讓前端能正確渲染旋轉狀態
             'active': {
                 'shape': self.active['shape'],
                 'x': self.active['x'],
