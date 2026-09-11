@@ -34,4 +34,4 @@ pip install -r requirements.txt
 
 ## 延伸說明
 
-- 更完整的流程、協定與玩法請見：`/hw2/tetris_duo/README.md`
+- 更完整的流程、協定與玩法請見：`/tetris_duo/README.md`
