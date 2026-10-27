@@ -122,7 +122,7 @@ int main(int argc,char**argv){
         timeval tv{1,0};setsockopt(sock,SOL_SOCKET,SO_RCVTIMEO,&tv,sizeof(tv));
 
     // Support multiple scan IPs from config (or single sip)
-        std::vector<std::string> scan_ips = {"140.113.17.12", "140.113.17.13", "140.113.17.14"};
+        std::vector<std::string> scan_ips = {"140.113.17.12", "140.113.17.13", "140.113.17.14", "127.0.0.1"};
         cout<<"Scanning "<<scan_ips.size()<<" target(s) ports "<<ps<<".."<<pe<<"\n";
 
     // Send probes to every target IP and port in the configured ranges
